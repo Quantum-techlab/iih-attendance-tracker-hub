@@ -1,7 +1,6 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAttendance } from '@/contexts/AttendanceContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,15 +8,45 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Calendar, AlertTriangle, Download, Search } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Users, Calendar, AlertTriangle, Download, Search, Edit, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+
+const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 export const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { getAllRecords } = useAttendance();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [users, setUsers] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [missedDays, setMissedDays] = useState([]);
+  const [pendingSignIns, setPendingSignIns] = useState([]);
+  const [editIntern, setEditIntern] = useState(null);
+  const [editRecord, setEditRecord] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', intern_id: '', sign_in_time: '', sign_out_time: '' });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data: usersData, error: usersError } = await supabase.from('profiles').select('*').eq('role', 'intern');
+      if (usersError) toast({ title: "Error", description: usersError.message, variant: "destructive" });
+      setUsers(usersData || []);
+
+      const { data: recordsData, error: recordsError } = await supabase.from('attendance_records').select('*');
+      if (recordsError) toast({ title: "Error", description: recordsError.message, variant: "destructive" });
+      setRecords(recordsData || []);
+
+      const { data: missedDaysData, error: missedDaysError } = await supabase.from('missed_days').select('*');
+      if (missedDaysError) toast({ title: "Error", description: missedDaysError.message, variant: "destructive" });
+      setMissedDays(missedDaysData || []);
+
+      const { data: pendingData, error: pendingError } = await supabase.from('pending_sign_ins').select('*').eq('status', 'pending');
+      if (pendingError) toast({ title: "Error", description: pendingError.message, variant: "destructive" });
+      setPendingSignIns(pendingData || []);
+    };
+    fetchData();
+  }, []);
 
   if (!user || user.role !== 'admin') {
     return (
@@ -35,36 +64,76 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  const allRecords = getAllRecords();
-  const users = JSON.parse(localStorage.getItem('users') || '[]');
-  const interns = users.filter((u: any) => u.role === 'intern');
-
-  // Calculate statistics
+  const interns = users;
   const totalInterns = interns.length;
-  const todayRecords = allRecords.filter(r => r.date === new Date().toISOString().split('T')[0]);
-  const presentToday = todayRecords.filter(r => r.signInTime).length;
+  const today = new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' });
+  const todayRecords = records.filter(r => r.sign_in_time && new Date(r.sign_in_time).toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) === today);
+  const presentToday = todayRecords.length;
   const absentToday = totalInterns - presentToday;
 
-  // Filter records based on search and status
-  const filteredRecords = allRecords.filter(record => {
-    const user = users.find((u: any) => u.id === record.userId);
+  const missedDaysByUser = missedDays.reduce((acc, { user_id, missed_date }) => {
+    acc[user_id] = acc[user_id] || [];
+    acc[user_id].push(missed_date);
+    return acc;
+  }, {});
+
+  const getStatus = (record) => {
+    if (record.sign_in_time && record.sign_out_time) return 'present';
+    if (record.sign_in_time) return 'partial';
+    return 'absent';
+  };
+
+  const getStatusBadge = (record) => {
+    const status = getStatus(record);
+    switch (status) {
+      case 'present':
+        return <Badge className="bg-green-100 text-green-800">Present</Badge>;
+      case 'partial':
+        return <Badge className="bg-yellow-100 text-yellow-800">Partial</Badge>;
+      default:
+        return <Badge className="bg-red-100 text-red-800">Absent</Badge>;
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      timeZone: 'Africa/Lagos',
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleTimeString('en-US', {
+      timeZone: 'Africa/Lagos',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const filteredRecords = records.filter(record => {
+    const user = users.find(u => u.id === record.user_id);
     const matchesSearch = !searchTerm || 
       (user && (user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                user.internId.toLowerCase().includes(searchTerm.toLowerCase())));
-    const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
+                user.intern_id.toLowerCase().includes(searchTerm.toLowerCase())));
+    const matchesStatus = statusFilter === 'all' || getStatus(record) === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const exportData = () => {
+  const exportData = async () => {
     const csvData = filteredRecords.map(record => {
-      const user = users.find((u: any) => u.id === record.userId);
+      const user = users.find(u => u.id === record.user_id);
       return {
         Name: user?.name || 'Unknown',
-        InternID: user?.internId || 'Unknown',
-        Date: record.date,
-        SignInTime: record.signInTime || 'N/A',
-        SignOutTime: record.signOutTime || 'N/A',
-        Status: record.status
+        InternID: user?.intern_id || 'Unknown',
+        Date: formatDate(record.sign_in_time),
+        SignInTime: formatTime(record.sign_in_time),
+        SignOutTime: formatTime(record.sign_out_time),
+        Status: getStatus(record),
       };
     });
 
@@ -77,45 +146,86 @@ export const AdminDashboard: React.FC = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `attendance-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `attendance-report-${today}.csv`;
     a.click();
-    
+    window.URL.revokeObjectURL(url);
+
     toast({
       title: "Export successful",
       description: "Attendance report has been downloaded.",
     });
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+  const handleEditIntern = async () => {
+    if (!editIntern) return;
+    const { error } = await supabase.from('profiles').update({
+      name: editForm.name,
+      intern_id: editForm.intern_id,
+    }).eq('id', editIntern.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setUsers(users.map(u => u.id === editIntern.id ? { ...u, name: editForm.name, intern_id: editForm.intern_id } : u));
+      setEditIntern(null);
+      toast({ title: "Success", description: "Intern updated successfully" });
+    }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'present':
-        return <Badge className="bg-green-100 text-green-800">Present</Badge>;
-      case 'partial':
-        return <Badge className="bg-yellow-100 text-yellow-800">Partial</Badge>;
-      default:
-        return <Badge className="bg-red-100 text-red-800">Absent</Badge>;
+  const handleEditRecord = async () => {
+    if (!editRecord) return;
+    const updates = {
+      sign_in_time: editForm.sign_in_time ? new Date(editForm.sign_in_time).toISOString() : null,
+      sign_out_time: editForm.sign_out_time ? new Date(editForm.sign_out_time).toISOString() : null,
+    };
+    const { error } = await supabase.from('attendance_records').update(updates).eq('id', editRecord.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setRecords(records.map(r => r.id === editRecord.id ? { ...r, ...updates } : r));
+      setEditRecord(null);
+      toast({ title: "Success", description: "Attendance updated successfully" });
+    }
+  };
+
+  const handleApproveSignIn = async (pending) => {
+    const { error: updateError } = await supabase.from('pending_sign_ins').update({ status: 'approved' }).eq('id', pending.id);
+    if (updateError) {
+      toast({ title: "Error", description: updateError.message, variant: "destructive" });
+      return;
+    }
+
+    const { error: insertError } = await supabase.from('attendance_records').insert({
+      user_id: pending.user_id,
+      sign_in_time: pending.sign_in_time,
+    });
+    if (insertError) {
+      toast({ title: "Error", description: insertError.message, variant: "destructive" });
+      return;
+    }
+
+    setPendingSignIns(pendingSignIns.filter(p => p.id !== pending.id));
+    setRecords([...records, { user_id: pending.user_id, sign_in_time: pending.sign_in_time }]);
+    toast({ title: "Success", description: "Sign-in approved" });
+  };
+
+  const handleRejectSignIn = async (pending) => {
+    const { error } = await supabase.from('pending_sign_ins').delete().eq('id', pending.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setPendingSignIns(pendingSignIns.filter(p => p.id !== pending.id));
+      toast({ title: "Success", description: "Sign-in rejected" });
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-600 mt-2">Manage intern attendance and view comprehensive reports</p>
+          <p className="text-gray-600 mt-2">Manage intern attendance and approve sign-ins</p>
         </div>
 
-        {/* Statistics Cards */}
         <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
@@ -127,7 +237,6 @@ export const AdminDashboard: React.FC = () => {
               <p className="text-xs text-muted-foreground">Active intern accounts</p>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Present Today</CardTitle>
@@ -138,7 +247,6 @@ export const AdminDashboard: React.FC = () => {
               <p className="text-xs text-muted-foreground">Signed in today</p>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Absent Today</CardTitle>
@@ -149,27 +257,77 @@ export const AdminDashboard: React.FC = () => {
               <p className="text-xs text-muted-foreground">Not signed in</p>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Attendance Rate</CardTitle>
-              <Calendar className="h-4 w-4 ml-auto text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Pending Sign-Ins</CardTitle>
+              <Users className="h-4 w-4 ml-auto text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {totalInterns > 0 ? Math.round((presentToday / totalInterns) * 100) : 0}%
-              </div>
-              <p className="text-xs text-muted-foreground">Today's rate</p>
+              <div className="text-2xl font-bold text-yellow-600">{pendingSignIns.length}</div>
+              <p className="text-xs text-muted-foreground">Awaiting approval</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content */}
-        <Tabs defaultValue="attendance" className="space-y-6">
+        <Tabs defaultValue="pending" className="space-y-6">
           <TabsList>
+            <TabsTrigger value="pending">Pending Sign-Ins</TabsTrigger>
             <TabsTrigger value="attendance">Attendance Records</TabsTrigger>
             <TabsTrigger value="interns">Manage Interns</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="pending" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Pending Sign-Ins</CardTitle>
+                <CardDescription>Approve or reject intern sign-in requests</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {pendingSignIns.length > 0 ? (
+                    pendingSignIns.map((pending) => {
+                      const pendingUser = users.find(u => u.id === pending.user_id);
+                      return (
+                        <div key={pending.id} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex-1">
+                            <div className="font-medium">{pendingUser?.name || 'Unknown User'}</div>
+                            <div className="text-sm text-gray-600">
+                              ID: {pendingUser?.intern_id || 'Unknown'} • Requested: {formatDate(pending.sign_in_time)} at {formatTime(pending.sign_in_time)}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-green-600 border-green-600"
+                              onClick={() => handleApproveSignIn(pending)}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 border-red-600"
+                              onClick={() => handleRejectSignIn(pending)}
+                            >
+                              <XCircle className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No pending sign-in requests</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="attendance" className="space-y-6">
             <Card>
@@ -186,7 +344,6 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Filters */}
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <div className="flex-1">
                     <Label htmlFor="search">Search by name or intern ID</Label>
@@ -217,27 +374,67 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Records Table */}
                 <div className="space-y-4">
                   {filteredRecords.length > 0 ? (
                     filteredRecords.map((record) => {
-                      const recordUser = users.find((u: any) => u.id === record.userId);
+                      const recordUser = users.find(u => u.id === record.user_id);
                       return (
                         <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
                           <div className="flex-1">
                             <div className="font-medium">{recordUser?.name || 'Unknown User'}</div>
                             <div className="text-sm text-gray-600">
-                              ID: {recordUser?.internId || 'Unknown'} • {formatDate(record.date)}
+                              ID: {recordUser?.intern_id || 'Unknown'} • {formatDate(record.sign_in_time)}
                             </div>
                           </div>
                           <div className="flex items-center space-x-4">
                             <div className="text-sm text-gray-600">
-                              {record.signInTime && `In: ${record.signInTime}`}
-                              {record.signInTime && record.signOutTime && ' • '}
-                              {record.signOutTime && `Out: ${record.signOutTime}`}
-                              {!record.signInTime && 'No sign-in'}
+                              {record.sign_in_time && `In: ${formatTime(record.sign_in_time)}`}
+                              {record.sign_in_time && record.sign_out_time && ' • '}
+                              {record.sign_out_time && `Out: ${formatTime(record.sign_out_time)}`}
+                              {!record.sign_in_time && 'No sign-in'}
                             </div>
-                            {getStatusBadge(record.status)}
+                            {getStatusBadge(record)}
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => {
+                                  setEditRecord(record);
+                                  setEditForm({
+                                    sign_in_time: record.sign_in_time ? new Date(record.sign_in_time).toISOString().slice(0, 16) : '',
+                                    sign_out_time: record.sign_out_time ? new Date(record.sign_out_time).toISOString().slice(0, 16) : '',
+                                    name: '',
+                                    intern_id: '',
+                                  });
+                                }}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Edit Attendance Record</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <div>
+                                    <Label htmlFor="sign_in_time">Sign-In Time</Label>
+                                    <Input
+                                      id="sign_in_time"
+                                      type="datetime-local"
+                                      value={editForm.sign_in_time}
+                                      onChange={(e) => setEditForm({ ...editForm, sign_in_time: e.target.value })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="sign_out_time">Sign-Out Time</Label>
+                                    <Input
+                                      id="sign_out_time"
+                                      type="datetime-local"
+                                      value={editForm.sign_out_time}
+                                      onChange={(e) => setEditForm({ ...editForm, sign_out_time: e.target.value })}
+                                    />
+                                  </div>
+                                  <Button onClick={handleEditRecord}>Save</Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           </div>
                         </div>
                       );
@@ -262,30 +459,69 @@ export const AdminDashboard: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {interns.map((intern: any) => {
-                    const internRecords = allRecords.filter(r => r.userId === intern.id);
-                    const missedDays = internRecords.filter(r => !r.signInTime).length;
-                    const totalDays = internRecords.length;
-                    const attendanceRate = totalDays > 0 ? Math.round(((totalDays - missedDays) / totalDays) * 100) : 0;
+                  {interns.map((intern) => {
+                    const internMissedDays = (missedDaysByUser[intern.id] || []).length;
+                    const internRecords = records.filter(r => r.user_id === intern.id);
+                    const totalDays = internRecords.length + internMissedDays;
+                    const attendanceRate = totalDays > 0 ? Math.round(((totalDays - internMissedDays) / totalDays) * 100) : 0;
 
                     return (
                       <div key={intern.id} className="flex items-center justify-between p-4 border rounded-lg">
                         <div className="flex-1">
                           <div className="font-medium">{intern.name}</div>
                           <div className="text-sm text-gray-600">
-                            {intern.email} • ID: {intern.internId}
+                            {intern.email} • ID: {intern.intern_id}
                           </div>
                         </div>
                         <div className="flex items-center space-x-4">
                           <div className="text-right">
                             <div className="text-sm font-medium">{attendanceRate}% attendance</div>
                             <div className="text-xs text-gray-500">
-                              {missedDays} missed day{missedDays !== 1 ? 's' : ''}
+                              {internMissedDays} missed day{internMissedDays !== 1 ? 's' : ''}
                             </div>
                           </div>
-                          {missedDays >= 3 && (
+                          {internMissedDays >= 3 && (
                             <Badge className="bg-red-100 text-red-800">High Absences</Badge>
                           )}
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm" onClick={() => {
+                                setEditIntern(intern);
+                                setEditForm({
+                                  name: intern.name,
+                                  intern_id: intern.intern_id,
+                                  sign_in_time: '',
+                                  sign_out_time: '',
+                                });
+                              }}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Edit Intern</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div>
+                                  <Label htmlFor="name">Name</Label>
+                                  <Input
+                                    id="name"
+                                    value={editForm.name}
+                                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="intern_id">Intern ID</Label>
+                                  <Input
+                                    id="intern_id"
+                                    value={editForm.intern_id}
+                                    onChange={(e) => setEditForm({ ...editForm, intern_id: e.target.value })}
+                                  />
+                                </div>
+                                <Button onClick={handleEditIntern}>Save</Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
                         </div>
                       </div>
                     );
