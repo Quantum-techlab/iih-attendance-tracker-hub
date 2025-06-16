@@ -1,5 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './AuthContext';
 
 interface AttendanceRecord {
   id: string;
@@ -12,12 +14,13 @@ interface AttendanceRecord {
 
 interface AttendanceContextType {
   records: AttendanceRecord[];
-  signIn: (userId: string) => boolean;
-  signOut: (userId: string) => boolean;
+  signIn: (userId: string) => Promise<boolean>;
+  signOut: (userId: string) => Promise<boolean>;
   getTodayRecord: (userId: string) => AttendanceRecord | null;
   getUserRecords: (userId: string) => AttendanceRecord[];
   getMissedDays: (userId: string) => string[];
   getAllRecords: () => AttendanceRecord[];
+  refreshRecords: () => Promise<void>;
 }
 
 const AttendanceContext = createContext<AttendanceContextType | null>(null);
@@ -32,6 +35,7 @@ export const useAttendance = () => {
 
 export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const { user } = useAuth();
 
   const isWeekday = (date: Date) => {
     const day = date.getDay();
@@ -46,77 +50,119 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: true,
+      hour12: false,
       timeZone: 'Africa/Lagos'
     });
   };
 
-  useEffect(() => {
-    const storedRecords = localStorage.getItem('attendanceRecords');
-    if (storedRecords) {
-      setRecords(JSON.parse(storedRecords));
+  const refreshRecords = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('attendance_records')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching attendance records:', error);
+      return;
     }
-  }, []);
+
+    const formattedRecords: AttendanceRecord[] = data.map(record => ({
+      id: record.id,
+      userId: record.user_id,
+      date: record.date,
+      signInTime: record.sign_in_time,
+      signOutTime: record.sign_out_time,
+      status: record.status as 'present' | 'absent' | 'partial'
+    }));
+
+    setRecords(formattedRecords);
+  };
 
   useEffect(() => {
-    localStorage.setItem('attendanceRecords', JSON.stringify(records));
-  }, [records]);
+    if (user) {
+      refreshRecords();
+    }
+  }, [user]);
 
-  const signIn = (userId: string): boolean => {
+  const signIn = async (userId: string): Promise<boolean> => {
     const today = new Date();
     if (!isWeekday(today)) return false;
 
     const todayStr = formatDate(today);
+    const timeStr = formatTime(today);
+    
     const existingRecord = records.find(r => r.userId === userId && r.date === todayStr);
 
     if (existingRecord && existingRecord.signInTime) {
       return false; // Already signed in today
     }
 
-    const newRecord: AttendanceRecord = {
-      id: Date.now().toString(),
-      userId,
-      date: todayStr,
-      signInTime: formatTime(today),
-      signOutTime: null,
-      status: 'partial'
-    };
+    try {
+      if (existingRecord) {
+        // Update existing record
+        const { error } = await supabase
+          .from('attendance_records')
+          .update({
+            sign_in_time: timeStr,
+            status: 'partial'
+          })
+          .eq('id', existingRecord.id);
 
-    if (existingRecord) {
-      setRecords(prev => prev.map(r => 
-        r.id === existingRecord.id 
-          ? { ...r, signInTime: newRecord.signInTime, status: 'partial' }
-          : r
-      ));
-    } else {
-      setRecords(prev => [...prev, newRecord]);
+        if (error) throw error;
+      } else {
+        // Create new record
+        const { error } = await supabase
+          .from('attendance_records')
+          .insert({
+            user_id: userId,
+            date: todayStr,
+            sign_in_time: timeStr,
+            status: 'partial'
+          });
+
+        if (error) throw error;
+      }
+
+      await refreshRecords();
+      return true;
+    } catch (error) {
+      console.error('Error signing in:', error);
+      return false;
     }
-
-    return true;
   };
 
-  const signOut = (userId: string): boolean => {
+  const signOut = async (userId: string): Promise<boolean> => {
     const today = new Date();
     if (!isWeekday(today)) return false;
 
     const todayStr = formatDate(today);
+    const timeStr = formatTime(today);
+    
     const existingRecord = records.find(r => r.userId === userId && r.date === todayStr);
 
-    if (!existingRecord || !existingRecord.signInTime) {
-      return false; // Must sign in first
+    if (!existingRecord || !existingRecord.signInTime || existingRecord.signOutTime) {
+      return false; // Must sign in first or already signed out
     }
 
-    if (existingRecord.signOutTime) {
-      return false; // Already signed out
+    try {
+      const { error } = await supabase
+        .from('attendance_records')
+        .update({
+          sign_out_time: timeStr,
+          status: 'present'
+        })
+        .eq('id', existingRecord.id);
+
+      if (error) throw error;
+
+      await refreshRecords();
+      return true;
+    } catch (error) {
+      console.error('Error signing out:', error);
+      return false;
     }
-
-    setRecords(prev => prev.map(r => 
-      r.id === existingRecord.id 
-        ? { ...r, signOutTime: formatTime(today), status: 'present' }
-        : r
-    ));
-
-    return true;
   };
 
   const getTodayRecord = (userId: string): AttendanceRecord | null => {
@@ -125,9 +171,9 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const getUserRecords = (userId: string): AttendanceRecord[] => {
-    return records.filter(r => r.userId === userId).sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
+    return records
+      .filter(r => r.userId === userId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
   const getMissedDays = (userId: string): string[] => {
@@ -165,7 +211,8 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       getTodayRecord,
       getUserRecords,
       getMissedDays,
-      getAllRecords
+      getAllRecords,
+      refreshRecords
     }}>
       {children}
     </AttendanceContext.Provider>

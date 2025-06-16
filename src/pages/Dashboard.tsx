@@ -15,7 +15,14 @@ export const Dashboard: React.FC = () => {
   const { toast } = useToast();
 
   if (!user) {
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   const todayRecord = getTodayRecord(user.id);
@@ -24,8 +31,8 @@ export const Dashboard: React.FC = () => {
   const today = new Date();
   const isWeekday = today.getDay() >= 1 && today.getDay() <= 5;
 
-  const handleSignIn = () => {
-    const success = signIn(user.id);
+  const handleSignIn = async () => {
+    const success = await signIn(user.id);
     if (success) {
       toast({
         title: "Signed in successfully!",
@@ -40,8 +47,8 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const handleSignOut = () => {
-    const success = signOut(user.id);
+  const handleSignOut = async () => {
+    const success = await signOut(user.id);
     if (success) {
       toast({
         title: "Signed out successfully!",
@@ -97,13 +104,17 @@ export const Dashboard: React.FC = () => {
                   <Mail className="h-4 w-4 text-gray-500" />
                   <span>{user.email}</span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Phone className="h-4 w-4 text-gray-500" />
-                  <span>{user.phoneNumber}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Badge variant="outline">{user.internId}</Badge>
-                </div>
+                {user.phone_number && (
+                  <div className="flex items-center space-x-2">
+                    <Phone className="h-4 w-4 text-gray-500" />
+                    <span>{user.phone_number}</span>
+                  </div>
+                )}
+                {user.intern_id && (
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline">{user.intern_id}</Badge>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
