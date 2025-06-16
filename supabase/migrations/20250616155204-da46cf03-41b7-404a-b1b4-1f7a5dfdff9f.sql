@@ -21,9 +21,21 @@ CREATE TABLE public.attendance_records (
   UNIQUE(user_id, sign_in_time::DATE)
 );
 
+-- Create pending sign-ins table
+CREATE TABLE public.pending_sign_ins (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  sign_in_time TIMESTAMP WITH TIME ZONE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(user_id, sign_in_time::DATE)
+);
+
 -- Enable Row Level Security
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pending_sign_ins ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for profiles
 CREATE POLICY "Users can view their own profile" ON public.profiles
@@ -54,14 +66,17 @@ CREATE POLICY "Users can view their own attendance" ON public.attendance_records
     user_id IN (SELECT id FROM public.profiles WHERE id = auth.uid())
   );
 
-CREATE POLICY "Users can insert their own attendance" ON public.attendance_records
-  FOR INSERT WITH CHECK (
-    user_id IN (SELECT id FROM public.profiles WHERE id = auth.uid())
+CREATE POLICY "Users can view their own attendance" ON public.attendance_records
+  FOR SELECT USING (
+    user_id = auth.uid()
   );
 
-CREATE POLICY "Users can update their own attendance" ON public.attendance_records
-  FOR UPDATE USING (
-    user_id IN (SELECT id FROM public.profiles WHERE id = auth.uid())
+CREATE POLICY "Admins can insert attendance records" ON public.attendance_records
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
   );
 
 CREATE POLICY "Admins can view all attendance records" ON public.attendance_records
@@ -74,6 +89,41 @@ CREATE POLICY "Admins can view all attendance records" ON public.attendance_reco
 
 CREATE POLICY "Admins can update all attendance records" ON public.attendance_records
   FOR UPDATE USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- Create policies for pending sign-ins
+CREATE POLICY "Interns can insert their own pending sign-ins" ON public.pending_sign_ins
+  FOR INSERT WITH CHECK (
+    user_id = auth.uid() AND status = 'pending'
+  );
+
+CREATE POLICY "Interns can view their own pending sign-ins" ON public.pending_sign_ins
+  FOR SELECT USING (
+    user_id = auth.uid()
+  );
+
+CREATE POLICY "Admins can view all pending sign-ins" ON public.pending_sign_ins
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins can update all pending sign-ins" ON public.pending_sign_ins
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins can delete pending sign-ins" ON public.pending_sign_ins
+  FOR DELETE USING (
     EXISTS (
       SELECT 1 FROM public.profiles 
       WHERE id = auth.uid() AND role = 'admin'
@@ -117,6 +167,10 @@ CREATE TRIGGER update_profiles_updated_at
 
 CREATE TRIGGER update_attendance_records_updated_at
   BEFORE UPDATE ON public.attendance_records
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_pending_sign_ins_updated_at
+  BEFORE UPDATE ON public.pending_sign_ins
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Create view for missed days
