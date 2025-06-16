@@ -1,1 +1,25 @@
+# Supabase project configuration for Ilorin Innovation Hub Intern Attendance App
 project_id = "uwuymwbtxkijpubsfijd"
+
+# Database configuration for local development
+[db]
+port = 5432
+major_version = 15
+
+# API configuration
+[api]
+port = 5433
+enabled = true
+schemas = ["public", "auth"]
+
+# Authentication configuration
+[auth]
+enabled = true
+site_url = "http://localhost:5173" # Update to your local dev URL (e.g., Vite's default port)
+additional_redirect_urls = ["https://your-app.vercel.app"] # Add your Vercel production URL
+jwt_secret = "your-secure-jwt-secret" # Generate a secure secret (at least 32 characters)
+
+# Studio configuration (optional, for local Supabase dashboard)
+[studio]
+enabled = true
+port = 5434
