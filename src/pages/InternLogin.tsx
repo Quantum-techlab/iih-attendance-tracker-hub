@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabaseClient"; // Adjust import if needed
+import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -69,7 +69,7 @@ const InternLogin: React.FC = () => {
         </form>
 
         <div className="text-sm text-center text-gray-600 mt-4">
-          Don’t have an account?{" "}
+          Don't have an account?{" "}
           <a href="/signup/intern" className="text-blue-600 hover:underline">
             Register
           </a>
