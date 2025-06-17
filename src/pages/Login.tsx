@@ -132,12 +132,6 @@ export const Login: React.FC = () => {
                   Sign up here
                 </Link>
               </p>
-              <p className="text-sm text-gray-600 mt-2">
-                Need to set up admin?{' '}
-                <Link to="/admin-setup" className="text-emerald-600 hover:text-emerald-500 font-medium">
-                  Admin setup
-                </Link>
-              </p>
             </div>
           </CardContent>
         </Card>

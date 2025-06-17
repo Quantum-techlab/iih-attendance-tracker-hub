@@ -31,6 +31,21 @@ export const useAuth = () => {
   return context;
 };
 
+// Create a security definer function to get user role without recursion
+const getCurrentUserRole = async (): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase.rpc('get_current_user_role');
+    if (error) {
+      console.error('Error getting user role:', error);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error('Role fetch error:', error);
+    return null;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
