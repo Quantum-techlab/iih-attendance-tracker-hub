@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,8 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Clock, Calendar, AlertTriangle, CheckCircle, User, Phone, Mail, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
-const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -27,95 +26,70 @@ export const Dashboard: React.FC = () => {
 
     const fetchData = async () => {
       setLoading(true);
+      console.log('Fetching data for user:', user.id);
 
-      // Fetch today's attendance record
-      const todayDate = today.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' });
-      const todayStart = new Date(today.setHours(0, 0, 0, 0)).toISOString();
-      const todayEnd = new Date(today.setHours(23, 59, 59, 999)).toISOString();
-      const { data: recordData, error: recordError } = await supabase
-        .from('attendance_records')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('sign_in_time', todayStart)
-        .lte('sign_in_time', todayEnd)
-        .single();
-      if (recordError && recordError.code !== 'PGRST116') { // Ignore "no rows" error
-        toast({ title: "Error", description: recordError.message, variant: "destructive" });
-      }
-      setTodayRecord(recordData);
+      try {
+        // Get today's date in YYYY-MM-DD format
+        const todayDate = today.toISOString().split('T')[0];
+        
+        // Fetch today's attendance record
+        const { data: recordData, error: recordError } = await supabase
+          .from('attendance_records')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('date', todayDate)
+          .maybeSingle();
+        
+        if (recordError) {
+          console.error('Error fetching today record:', recordError);
+          toast({ title: "Error", description: recordError.message, variant: "destructive" });
+        } else {
+          console.log('Today record:', recordData);
+          setTodayRecord(recordData);
+        }
 
-      // Fetch today's pending sign-in request
-      const { data: pendingData, error: pendingError } = await supabase
-        .from('pending_sign_ins')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('sign_in_time', todayStart)
-        .lte('sign_in_time', todayEnd)
-        .single();
-      if (pendingError && pendingError.code !== 'PGRST116') {
-        toast({ title: "Error", description: pendingError.message, variant: "destructive" });
-      }
-      setPendingRequest(pendingData);
+        // Fetch recent attendance records (last 10)
+        const { data: recordsData, error: recordsError } = await supabase
+          .from('attendance_records')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false })
+          .limit(10);
+        
+        if (recordsError) {
+          console.error('Error fetching records:', recordsError);
+          toast({ title: "Error", description: recordsError.message, variant: "destructive" });
+        } else {
+          console.log('User records:', recordsData);
+          setUserRecords(recordsData || []);
+        }
 
-      // Fetch recent attendance records (last 10)
-      const { data: recordsData, error: recordsError } = await supabase
-        .from('attendance_records')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('sign_in_time', { ascending: false })
-        .limit(10);
-      if (recordsError) {
-        toast({ title: "Error", description: recordsError.message, variant: "destructive" });
-      }
-      setUserRecords(recordsData || []);
+        // Calculate missed days (last 30 weekdays without attendance)
+        const missedDaysData = [];
+        for (let i = 1; i <= 30; i++) {
+          const checkDate = new Date(today);
+          checkDate.setDate(today.getDate() - i);
+          
+          if (checkDate.getDay() >= 1 && checkDate.getDay() <= 5) { // Weekday
+            const checkDateStr = checkDate.toISOString().split('T')[0];
+            const hasRecord = recordsData?.find(r => r.date === checkDateStr && r.sign_in_time);
+            
+            if (!hasRecord) {
+              missedDaysData.push(checkDateStr);
+            }
+          }
+        }
+        setMissedDays(missedDaysData);
 
-      // Fetch missed days
-      const { data: missedDaysData, error: missedDaysError } = await supabase
-        .from('missed_days')
-        .select('missed_date')
-        .eq('user_id', user.id);
-      if (missedDaysError) {
-        toast({ title: "Error", description: missedDaysError.message, variant: "destructive" });
+      } catch (error) {
+        console.error('Error in fetchData:', error);
+        toast({ title: "Error", description: "Failed to load data", variant: "destructive" });
       }
-      setMissedDays(missedDaysData?.map(d => d.missed_date) || []);
 
       setLoading(false);
     };
 
     fetchData();
-
-    // Subscribe to pending_sign_ins changes for real-time updates
-    const subscription = supabase
-      .channel('pending_sign_ins_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_sign_ins', filter: `user_id=eq.${user.id}` }, (payload) => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          setPendingRequest(payload.new);
-          if (payload.new.status === 'approved') {
-            setTodayRecord({ user_id: user.id, sign_in_time: payload.new.sign_in_time });
-            setPendingRequest(null);
-          } else if (payload.new.status === 'rejected') {
-            setPendingRequest(null);
-          }
-        } else if (payload.eventType === 'DELETE') {
-          setPendingRequest(null);
-        }
-      })
-      .subscribe();
-
-    // Subscribe to attendance_records for sign-out updates
-    const recordSubscription = supabase
-      .channel('attendance_records_changes')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance_records', filter: `user_id=eq.${user.id}` }, (payload) => {
-        if (new Date(payload.new.sign_in_time).toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) === todayDate) {
-          setTodayRecord(payload.new);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-      supabase.removeChannel(recordSubscription);
-    };
   }, [user, toast]);
 
   if (!user) {
@@ -130,57 +104,78 @@ export const Dashboard: React.FC = () => {
   }
 
   const handleSignIn = async () => {
-    if (pendingRequest || todayRecord) {
+    if (todayRecord) {
       toast({
-        title: "Sign-in failed",
-        description: "You have already submitted a sign-in request or signed in today.",
+        title: "Already signed in",
+        description: "You have already signed in today.",
         variant: "destructive",
       });
       return;
     }
 
-    const { error } = await supabase.from('pending_sign_ins').insert({
+    const todayDate = today.toISOString().split('T')[0];
+    const currentTime = today.toTimeString().split(' ')[0].substring(0, 5); // HH:MM format
+
+    console.log('Attempting sign in for date:', todayDate, 'time:', currentTime);
+
+    const { data, error } = await supabase.from('attendance_records').insert({
       user_id: user.id,
-      sign_in_time: new Date().toISOString(),
-    });
+      date: todayDate,
+      sign_in_time: currentTime,
+      status: 'partial'
+    }).select().single();
 
     if (error) {
+      console.error('Sign-in error:', error);
       toast({
-        title: "Sign-in request failed",
+        title: "Sign-in failed",
         description: error.message,
         variant: "destructive",
       });
     } else {
+      console.log('Sign-in successful:', data);
+      setTodayRecord(data);
       toast({
-        title: "Sign-in request submitted!",
-        description: "Awaiting admin approval.",
+        title: "Signed in successfully!",
+        description: "Welcome to work today!",
       });
     }
   };
 
   const handleSignOut = async () => {
-    if (!todayRecord || todayRecord.sign_out_time) {
+    if (!todayRecord || !todayRecord.sign_in_time || todayRecord.sign_out_time) {
       toast({
         title: "Sign-out failed",
-        description: "You must sign in and have admin approval first, or you’ve already signed out.",
+        description: "You must sign in first, or you've already signed out.",
         variant: "destructive",
       });
       return;
     }
 
-    const { error } = await supabase
+    const currentTime = today.toTimeString().split(' ')[0].substring(0, 5); // HH:MM format
+
+    console.log('Attempting sign out at time:', currentTime);
+
+    const { data, error } = await supabase
       .from('attendance_records')
-      .update({ sign_out_time: new Date().toISOString() })
-      .eq('id', todayRecord.id);
+      .update({ 
+        sign_out_time: currentTime,
+        status: 'present'
+      })
+      .eq('id', todayRecord.id)
+      .select()
+      .single();
 
     if (error) {
+      console.error('Sign-out error:', error);
       toast({
         title: "Sign-out failed",
         description: error.message,
         variant: "destructive",
       });
     } else {
-      setTodayRecord({ ...todayRecord, sign_out_time: new Date().toISOString() });
+      console.log('Sign-out successful:', data);
+      setTodayRecord(data);
       toast({
         title: "Signed out successfully!",
         description: "Have a great rest of your day!",
@@ -190,8 +185,7 @@ export const Dashboard: React.FC = () => {
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      timeZone: 'Africa/Lagos',
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -199,13 +193,9 @@ export const Dashboard: React.FC = () => {
     });
   };
 
-  const formatTime = (timestamp) => {
-    if (!timestamp) return 'N/A';
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      timeZone: 'Africa/Lagos',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const formatTime = (timeStr) => {
+    if (!timeStr) return 'N/A';
+    return timeStr;
   };
 
   const getStatusBadge = (record) => {
@@ -267,14 +257,7 @@ export const Dashboard: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {pendingRequest ? (
-                      <div className="flex items-center space-x-2">
-                        <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />
-                        <span className="text-sm">
-                          Sign-in request at {formatTime(pendingRequest.sign_in_time)} ({pendingRequest.status})
-                        </span>
-                      </div>
-                    ) : todayRecord ? (
+                    {todayRecord ? (
                       <>
                         {todayRecord.sign_in_time && (
                           <div className="flex items-center space-x-2">
@@ -318,17 +301,17 @@ export const Dashboard: React.FC = () => {
                 <CardHeader>
                   <CardTitle>Today's Attendance</CardTitle>
                   <CardDescription>
-                    Request sign-in when you arrive and sign out when you leave
+                    Sign in when you arrive and sign out when you leave
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex space-x-4">
                     <Button
                       onClick={handleSignIn}
-                      disabled={!!pendingRequest || !!todayRecord}
+                      disabled={!!todayRecord}
                       className="flex-1"
                     >
-                      {pendingRequest ? `Request ${pendingRequest.status.charAt(0).toUpperCase() + pendingRequest.status.slice(1)}` : todayRecord ? 'Signed In' : 'Request Sign-In'}
+                      {todayRecord ? 'Signed In' : 'Sign In'}
                     </Button>
                     <Button
                       onClick={handleSignOut}
@@ -368,7 +351,7 @@ export const Dashboard: React.FC = () => {
                     {userRecords.map((record) => (
                       <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
                         <div>
-                          <div className="font-medium">{formatDate(record.sign_in_time)}</div>
+                          <div className="font-medium">{formatDate(record.date)}</div>
                           <div className="text-sm text-gray-600">
                             {record.sign_in_time && `In: ${formatTime(record.sign_in_time)}`}
                             {record.sign_in_time && record.sign_out_time && ' • '}
@@ -386,7 +369,7 @@ export const Dashboard: React.FC = () => {
                   <div className="text-center py-8 text-gray-500">
                     <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                     <p>No attendance records yet</p>
-                    <p className="text-sm">Start by requesting a sign-in today!</p>
+                    <p className="text-sm">Start by signing in today!</p>
                   </div>
                 )}
               </CardContent>
