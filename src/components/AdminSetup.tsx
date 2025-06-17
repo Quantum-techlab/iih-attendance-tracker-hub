@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -44,11 +43,12 @@ export const AdminSetup: React.FC = () => {
     setError('');
 
     try {
-      // First, create the user in Supabase Auth
+      // First, create the user in Supabase Auth with email confirmation disabled
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
+          emailRedirectTo: undefined, // Disable email confirmation
           data: {
             name: formData.name,
             intern_id: 'ADMIN001'
@@ -57,26 +57,71 @@ export const AdminSetup: React.FC = () => {
       });
 
       if (authError) {
-        throw authError;
+        // Check if user already exists
+        if (authError.message?.includes('already registered') || authError.message?.includes('already been registered')) {
+          // Try to sign in the existing user to verify credentials work
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: formData.email,
+            password: formData.password,
+          });
+
+          if (signInError) {
+            throw new Error('Admin user exists but credentials are incorrect. Please check your email and password.');
+          } else {
+            // User exists and credentials work, update their profile to admin
+            if (signInData.user) {
+              const { error: updateError } = await supabase
+                .from('profiles')
+                .upsert({ 
+                  id: signInData.user.id,
+                  name: formData.name,
+                  role: 'admin',
+                  intern_id: 'ADMIN001',
+                  email: formData.email
+                });
+
+              if (updateError) {
+                console.error('Update error:', updateError);
+              }
+
+              // Sign out after verification
+              await supabase.auth.signOut();
+              
+              setSuccess(true);
+              toast({
+                title: "Admin user verified and updated!",
+                description: `Admin credentials: ${formData.email} / ${formData.password}`,
+              });
+              return;
+            }
+          }
+        } else {
+          throw authError;
+        }
       }
 
       if (authData.user) {
-        // Wait a moment for the trigger to create the profile
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // For new users, wait a moment for any database triggers
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Update the profile to admin role
-        const { error: updateError } = await supabase
+        // Create or update the profile to admin role
+        const { error: upsertError } = await supabase
           .from('profiles')
-          .update({ 
+          .upsert({ 
+            id: authData.user.id,
+            name: formData.name,
             role: 'admin',
-            intern_id: 'ADMIN001'
-          })
-          .eq('id', authData.user.id);
+            intern_id: 'ADMIN001',
+            email: formData.email
+          });
 
-        if (updateError) {
-          console.error('Update error:', updateError);
+        if (upsertError) {
+          console.error('Profile upsert error:', upsertError);
           // Continue anyway, as the user was created
         }
+
+        // Sign out the newly created user so they can log in normally
+        await supabase.auth.signOut();
 
         setSuccess(true);
         toast({
@@ -86,11 +131,7 @@ export const AdminSetup: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Admin creation error:', error);
-      if (error.message?.includes('already registered')) {
-        setError('Admin user already exists');
-      } else {
-        setError(error.message || 'Failed to create admin user');
-      }
+      setError(error.message || 'Failed to create admin user');
     } finally {
       setIsLoading(false);
     }
@@ -102,7 +143,7 @@ export const AdminSetup: React.FC = () => {
         <CardContent className="pt-6">
           <div className="text-center">
             <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Admin User Created!</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Admin User Ready!</h3>
             <div className="bg-gray-50 p-4 rounded-lg mb-4">
               <p className="text-sm font-medium">Admin Login Credentials:</p>
               <p className="text-sm text-gray-600">Email: {formData.email}</p>
@@ -111,8 +152,8 @@ export const AdminSetup: React.FC = () => {
             <p className="text-sm text-gray-600 mb-4">
               You can now sign in as admin to access the admin dashboard.
             </p>
-            <Button onClick={() => window.location.href = '/login'} className="w-full">
-              Go to Login
+            <Button onClick={() => window.location.href = '/admin-login'} className="w-full">
+              Go to Admin Login
             </Button>
           </div>
         </CardContent>
