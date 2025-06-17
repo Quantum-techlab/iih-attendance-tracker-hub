@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -14,9 +14,20 @@ export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user && !isLoading) {
+      if (user.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
+      }
+    }
+  }, [user, isLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,17 +39,20 @@ export const Login: React.FC = () => {
     }
 
     try {
-      const success = await login(email, password);
-      if (success) {
+      const result = await login(email, password);
+      
+      if (result.success) {
         toast({
           title: "Welcome back!",
           description: "You have successfully signed in.",
         });
-        navigate('/dashboard');
+        
+        // Navigation will be handled by useEffect when user state updates
       } else {
-        setError('Invalid email or password');
+        setError(result.error || 'Invalid email or password');
       }
     } catch (err) {
+      console.error('Login error:', err);
       setError('An error occurred. Please try again.');
     }
   };
@@ -116,6 +130,12 @@ export const Login: React.FC = () => {
                 Don't have an account?{' '}
                 <Link to="/signup" className="text-blue-600 hover:text-blue-500 font-medium">
                   Sign up here
+                </Link>
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
+                Need to set up admin?{' '}
+                <Link to="/admin-setup" className="text-emerald-600 hover:text-emerald-500 font-medium">
+                  Admin setup
                 </Link>
               </p>
             </div>

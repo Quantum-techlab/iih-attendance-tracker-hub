@@ -133,15 +133,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
+        console.error('Login error:', error);
         return { success: false, error: error.message };
       }
 
       if (data.user) {
         const profile = await fetchUserProfile(data.user.id);
-        setUser(profile);
+        if (profile) {
+          setUser(profile);
+          setSession(data.session);
+          return { success: true };
+        } else {
+          return { success: false, error: 'Failed to load user profile' };
+        }
       }
 
-      return { success: true };
+      return { success: false, error: 'Login failed' };
     } catch (error) {
       console.error('Login error:', error);
       return { success: false, error: 'An unexpected error occurred' };
