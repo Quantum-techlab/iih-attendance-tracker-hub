@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -57,15 +56,17 @@ export const Landing: React.FC = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" asChild className="text-lg px-8 py-3">
-                <Link to="/login">Sign In Now</Link>
+                <Link to="/login/intern">Login as Intern</Link>
               </Button>
               <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3">
-                <Link to="/signup">Register as Intern</Link>
+                <Link to="/login/admin">Login as Admin</Link>
+              </Button>
+              <Button size="lg" variant="secondary" asChild className="text-lg px-8 py-3">
+                <Link to="/signup/intern">Register as Intern</Link>
               </Button>
             </div>
           </div>
         </div>
-        
         {/* Decorative elements */}
         <div className="absolute top-10 left-10 w-20 h-20 bg-blue-200 rounded-full opacity-20 animate-pulse"></div>
         <div className="absolute bottom-10 right-10 w-32 h-32 bg-emerald-200 rounded-full opacity-20 animate-pulse delay-1000"></div>
@@ -75,9 +76,7 @@ export const Landing: React.FC = () => {
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
-              About the System
-            </h2>
+            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">About the System</h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto">
               Built specifically for the Ilorin Innovation Hub, this attendance system ensures 
               seamless tracking of intern presence while providing valuable insights for both 
@@ -117,9 +116,7 @@ export const Landing: React.FC = () => {
                 <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
                   <span className="text-white font-bold text-2xl">IIH</span>
                 </div>
-                <h4 className="text-xl font-semibold text-gray-900 mb-2">
-                  Ilorin Innovation Hub
-                </h4>
+                <h4 className="text-xl font-semibold text-gray-900 mb-2">Ilorin Innovation Hub</h4>
                 <p className="text-gray-600">
                   Leading the way in technology education and innovation in Kwara State, 
                   providing world-class internship programs that shape the future of tech.
@@ -134,9 +131,7 @@ export const Landing: React.FC = () => {
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gray-50">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
-              Key Features
-            </h2>
+            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">Key Features</h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto">
               Everything you need for efficient attendance management, designed with 
               both interns and administrators in mind.
@@ -150,12 +145,8 @@ export const Landing: React.FC = () => {
                   <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-emerald-500 rounded-lg flex items-center justify-center mb-4">
                     <feature.icon className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    {feature.title}
-                  </h3>
-                  <p className="text-gray-600">
-                    {feature.description}
-                  </p>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h3>
+                  <p className="text-gray-600">{feature.description}</p>
                 </CardContent>
               </Card>
             ))}
@@ -166,18 +157,19 @@ export const Landing: React.FC = () => {
       {/* CTA Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-600 to-emerald-500">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-            Ready to Get Started?
-          </h2>
+          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Ready to Get Started?</h2>
           <p className="text-xl text-blue-100 mb-8">
             Join the Ilorin Innovation Hub community and start tracking your attendance today.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" asChild className="text-lg px-8 py-3">
-              <Link to="/signup">Create Account</Link>
+              <Link to="/signup/intern">Create Intern Account</Link>
             </Button>
             <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3 border-white text-white hover:bg-white hover:text-blue-600">
-              <Link to="/login">Sign In</Link>
+              <Link to="/login/intern">Login as Intern</Link>
+            </Button>
+            <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3 border-white text-white hover:bg-white hover:text-blue-600">
+              <Link to="/login/admin">Login as Admin</Link>
             </Button>
           </div>
         </div>
