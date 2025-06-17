@@ -1,4 +1,8 @@
--- Create user profiles table
+-- =====================
+-- Supabase SQL Schema for Intern Management System
+-- =====================
+
+-- 1. PROFILES TABLE
 CREATE TABLE public.profiles (
   id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   name TEXT NOT NULL,
@@ -10,7 +14,7 @@ CREATE TABLE public.profiles (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create attendance records table
+-- 2. ATTENDANCE RECORDS TABLE
 CREATE TABLE public.attendance_records (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
@@ -21,7 +25,7 @@ CREATE TABLE public.attendance_records (
   UNIQUE(user_id, sign_in_time::DATE)
 );
 
--- Create pending sign-ins table
+-- 3. PENDING SIGN-INS TABLE
 CREATE TABLE public.pending_sign_ins (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
@@ -32,105 +36,60 @@ CREATE TABLE public.pending_sign_ins (
   UNIQUE(user_id, sign_in_time::DATE)
 );
 
--- Enable Row Level Security
+-- 4. ENABLE RLS
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pending_sign_ins ENABLE ROW LEVEL SECURITY;
 
--- Create policies for profiles
+-- 5. SECURITY DEFINER FUNCTION TO GET USER ROLE
+CREATE OR REPLACE FUNCTION public.get_current_user_role()
+RETURNS TEXT AS $$
+  SELECT role FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE SQL SECURITY DEFINER STABLE;
+
+-- 6. RLS POLICIES FOR PROFILES
 CREATE POLICY "Users can view their own profile" ON public.profiles
   FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Admins can view all profiles" ON public.profiles
+  FOR SELECT USING (public.get_current_user_role() = 'admin');
 
 CREATE POLICY "Users can update their own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = id);
 
-CREATE POLICY "Admins can view all profiles" ON public.profiles
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
-
 CREATE POLICY "Admins can update all profiles" ON public.profiles
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR UPDATE USING (public.get_current_user_role() = 'admin');
 
--- Create policies for attendance records
+-- 7. RLS POLICIES FOR ATTENDANCE RECORDS
 CREATE POLICY "Users can view their own attendance" ON public.attendance_records
-  FOR SELECT USING (
-    user_id IN (SELECT id FROM public.profiles WHERE id = auth.uid())
-  );
-
-CREATE POLICY "Users can view their own attendance" ON public.attendance_records
-  FOR SELECT USING (
-    user_id = auth.uid()
-  );
-
-CREATE POLICY "Admins can insert attendance records" ON public.attendance_records
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR SELECT USING (user_id = auth.uid());
 
 CREATE POLICY "Admins can view all attendance records" ON public.attendance_records
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR SELECT USING (public.get_current_user_role() = 'admin');
+
+CREATE POLICY "Admins can insert attendance records" ON public.attendance_records
+  FOR INSERT WITH CHECK (public.get_current_user_role() = 'admin');
 
 CREATE POLICY "Admins can update all attendance records" ON public.attendance_records
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR UPDATE USING (public.get_current_user_role() = 'admin');
 
--- Create policies for pending sign-ins
+-- 8. RLS POLICIES FOR PENDING SIGN-INS
 CREATE POLICY "Interns can insert their own pending sign-ins" ON public.pending_sign_ins
-  FOR INSERT WITH CHECK (
-    user_id = auth.uid() AND status = 'pending'
-  );
+  FOR INSERT WITH CHECK (user_id = auth.uid() AND status = 'pending');
 
 CREATE POLICY "Interns can view their own pending sign-ins" ON public.pending_sign_ins
-  FOR SELECT USING (
-    user_id = auth.uid()
-  );
+  FOR SELECT USING (user_id = auth.uid());
 
 CREATE POLICY "Admins can view all pending sign-ins" ON public.pending_sign_ins
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR SELECT USING (public.get_current_user_role() = 'admin');
 
 CREATE POLICY "Admins can update all pending sign-ins" ON public.pending_sign_ins
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR UPDATE USING (public.get_current_user_role() = 'admin');
 
 CREATE POLICY "Admins can delete pending sign-ins" ON public.pending_sign_ins
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+  FOR DELETE USING (public.get_current_user_role() = 'admin');
 
--- Create function to handle new user registration
+-- 9. TRIGGERS FOR AUTOMATION
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -146,12 +105,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create trigger for new user registration
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Create function to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -160,7 +117,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create triggers for updated_at
 CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
@@ -173,7 +129,7 @@ CREATE TRIGGER update_pending_sign_ins_updated_at
   BEFORE UPDATE ON public.pending_sign_ins
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- Create view for missed days
+-- 10. VIEW FOR MISSED DAYS
 CREATE VIEW public.missed_days AS
 WITH working_days AS (
   SELECT generate_series(
@@ -181,7 +137,7 @@ WITH working_days AS (
     CURRENT_DATE,
     INTERVAL '1 day'
   )::DATE AS date
-  WHERE EXTRACT(DOW FROM generate_series) IN (1, 2, 3, 4, 5) -- Monday to Friday
+  WHERE EXTRACT(DOW FROM generate_series) IN (1, 2, 3, 4, 5)
 ),
 interns AS (
   SELECT id FROM public.profiles WHERE role = 'intern'
@@ -192,7 +148,6 @@ SELECT
 FROM interns i
 CROSS JOIN working_days w
 LEFT JOIN public.attendance_records ar
-  ON ar.user_id = i.id 
-  AND ar.sign_in_time::DATE = w.date
+  ON ar.user_id = i.id AND ar.sign_in_time::DATE = w.date
 WHERE ar.id IS NULL
-  AND w.date < CURRENT_DATE; -- Exclude today
+  AND w.date < CURRENT_DATE;
