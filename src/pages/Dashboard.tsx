@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,7 +12,6 @@ export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [todayRecord, setTodayRecord] = useState(null);
-  const [pendingRequest, setPendingRequest] = useState(null);
   const [userRecords, setUserRecords] = useState([]);
   const [missedDays, setMissedDays] = useState([]);
   const [loading, setLoading] = useState(true);
