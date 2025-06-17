@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,13 +8,16 @@ import { AttendanceProvider } from "@/contexts/AttendanceContext";
 import { Navbar } from "@/components/Layout/Navbar";
 import { Footer } from "@/components/Layout/Footer";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+
+// Pages
 import { Landing } from "@/pages/Landing";
 import { Login } from "@/pages/Login";
+import AdminLogin from "@/pages/AdminLogin";
 import { Signup } from "@/pages/Signup";
 import { Dashboard } from "@/pages/Dashboard";
 import { AdminDashboard } from "@/pages/AdminDashboard";
 import { AdminSetupPage } from "@/pages/AdminSetupPage";
-import NotFound from "./pages/NotFound";
+import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
 
@@ -33,24 +35,29 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Landing />} />
                   <Route path="/login" element={<Login />} />
+                  <Route path="/admin-login" element={<AdminLogin />} />
                   <Route path="/signup" element={<Signup />} />
                   <Route path="/admin-setup" element={<AdminSetupPage />} />
-                  <Route 
-                    path="/dashboard" 
+
+                  {/* Protected Routes */}
+                  <Route
+                    path="/dashboard"
                     element={
                       <ProtectedRoute>
                         <Dashboard />
                       </ProtectedRoute>
-                    } 
+                    }
                   />
-                  <Route 
-                    path="/admin" 
+                  <Route
+                    path="/admin"
                     element={
                       <ProtectedRoute adminOnly>
                         <AdminDashboard />
                       </ProtectedRoute>
-                    } 
+                    }
                   />
+
+                  {/* 404 Page */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </main>
