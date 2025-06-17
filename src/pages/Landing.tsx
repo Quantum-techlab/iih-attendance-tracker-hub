@@ -56,13 +56,13 @@ export const Landing: React.FC = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" asChild className="text-lg px-8 py-3">
-                <Link to="/login/intern">Login as Intern</Link>
+                <Link to="/intern-login">Login as Intern</Link>
               </Button>
               <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3">
-                <Link to="/login/admin">Login as Admin</Link>
+                <Link to="/admin-login">Login as Admin</Link>
               </Button>
               <Button size="lg" variant="secondary" asChild className="text-lg px-8 py-3">
-                <Link to="/signup/intern">Register as Intern</Link>
+                <Link to="/signup">Register as Intern</Link>
               </Button>
             </div>
           </div>
@@ -163,13 +163,13 @@ export const Landing: React.FC = () => {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" asChild className="text-lg px-8 py-3">
-              <Link to="/signup/intern">Create Intern Account</Link>
+              <Link to="/signup">Create Intern Account</Link>
             </Button>
             <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3 border-white text-white hover:bg-white hover:text-blue-600">
-              <Link to="/login/intern">Login as Intern</Link>
+              <Link to="/intern-login">Login as Intern</Link>
             </Button>
             <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3 border-white text-white hover:bg-white hover:text-blue-600">
-              <Link to="/login/admin">Login as Admin</Link>
+              <Link to="/admin-login">Login as Admin</Link>
             </Button>
           </div>
         </div>

@@ -71,7 +71,7 @@ const AdminLogin: React.FC = () => {
 
         <div className="text-sm text-center text-gray-600 mt-4">
           Not an admin?{" "}
-          <a href="/login" className="text-blue-600 hover:underline">
+          <a href="/intern-login" className="text-blue-600 hover:underline">
             Go to Intern Login
           </a>
         </div>

@@ -70,7 +70,7 @@ const InternLogin: React.FC = () => {
 
         <div className="text-sm text-center text-gray-600 mt-4">
           Don't have an account?{" "}
-          <a href="/signup/intern" className="text-blue-600 hover:underline">
+          <a href="/signup" className="text-blue-600 hover:underline">
             Register
           </a>
         </div>
