@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Users, Calendar, AlertTriangle, Download, Search, Edit, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Calendar, AlertTriangle, Download, Search, Edit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export const AdminDashboard: React.FC = () => {
@@ -19,8 +20,6 @@ export const AdminDashboard: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [users, setUsers] = useState([]);
   const [records, setRecords] = useState([]);
-  const [missedDays, setMissedDays] = useState([]);
-  const [pendingSignIns, setPendingSignIns] = useState([]);
   const [editIntern, setEditIntern] = useState(null);
   const [editRecord, setEditRecord] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', intern_id: '', sign_in_time: '', sign_out_time: '' });
@@ -34,14 +33,6 @@ export const AdminDashboard: React.FC = () => {
       const { data: recordsData, error: recordsError } = await supabase.from('attendance_records').select('*');
       if (recordsError) toast({ title: "Error", description: recordsError.message, variant: "destructive" });
       setRecords(recordsData || []);
-
-      const { data: missedDaysData, error: missedDaysError } = await supabase.from('missed_days').select('*');
-      if (missedDaysError) toast({ title: "Error", description: missedDaysError.message, variant: "destructive" });
-      setMissedDays(missedDaysData || []);
-
-      const { data: pendingData, error: pendingError } = await supabase.from('pending_sign_ins').select('*').eq('status', 'pending');
-      if (pendingError) toast({ title: "Error", description: pendingError.message, variant: "destructive" });
-      setPendingSignIns(pendingData || []);
     };
     fetchData();
   }, []);
@@ -68,12 +59,6 @@ export const AdminDashboard: React.FC = () => {
   const todayRecords = records.filter(r => r.sign_in_time && new Date(r.sign_in_time).toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) === today);
   const presentToday = todayRecords.length;
   const absentToday = totalInterns - presentToday;
-
-  const missedDaysByUser = missedDays.reduce((acc, { user_id, missed_date }) => {
-    acc[user_id] = acc[user_id] || [];
-    acc[user_id].push(missed_date);
-    return acc;
-  }, {});
 
   const getStatus = (record) => {
     if (record.sign_in_time && record.sign_out_time) return 'present';
@@ -114,20 +99,20 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const filteredRecords = records.filter(record => {
-    const user = users.find(u => u.id === record.user_id);
+    const recordUser = users.find(u => u.id === record.user_id);
     const matchesSearch = !searchTerm || 
-      (user && (user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                user.intern_id.toLowerCase().includes(searchTerm.toLowerCase())));
+      (recordUser && (recordUser.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                recordUser.intern_id.toLowerCase().includes(searchTerm.toLowerCase())));
     const matchesStatus = statusFilter === 'all' || getStatus(record) === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const exportData = async () => {
     const csvData = filteredRecords.map(record => {
-      const user = users.find(u => u.id === record.user_id);
+      const recordUser = users.find(u => u.id === record.user_id);
       return {
-        Name: user?.name || 'Unknown',
-        InternID: user?.intern_id || 'Unknown',
+        Name: recordUser?.name || 'Unknown',
+        InternID: recordUser?.intern_id || 'Unknown',
         Date: formatDate(record.sign_in_time),
         SignInTime: formatTime(record.sign_in_time),
         SignOutTime: formatTime(record.sign_out_time),
@@ -172,8 +157,8 @@ export const AdminDashboard: React.FC = () => {
   const handleEditRecord = async () => {
     if (!editRecord) return;
     const updates = {
-      sign_in_time: editForm.sign_in_time ? new Date(editForm.sign_in_time).toISOString() : null,
-      sign_out_time: editForm.sign_out_time ? new Date(editForm.sign_out_time).toISOString() : null,
+      sign_in_time: editForm.sign_in_time || null,
+      sign_out_time: editForm.sign_out_time || null,
     };
     const { error } = await supabase.from('attendance_records').update(updates).eq('id', editRecord.id);
     if (error) {
@@ -185,46 +170,15 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleApproveSignIn = async (pending) => {
-    const { error: updateError } = await supabase.from('pending_sign_ins').update({ status: 'approved' }).eq('id', pending.id);
-    if (updateError) {
-      toast({ title: "Error", description: updateError.message, variant: "destructive" });
-      return;
-    }
-
-    const { error: insertError } = await supabase.from('attendance_records').insert({
-      user_id: pending.user_id,
-      sign_in_time: pending.sign_in_time,
-    });
-    if (insertError) {
-      toast({ title: "Error", description: insertError.message, variant: "destructive" });
-      return;
-    }
-
-    setPendingSignIns(pendingSignIns.filter(p => p.id !== pending.id));
-    setRecords([...records, { user_id: pending.user_id, sign_in_time: pending.sign_in_time }]);
-    toast({ title: "Success", description: "Sign-in approved" });
-  };
-
-  const handleRejectSignIn = async (pending) => {
-    const { error } = await supabase.from('pending_sign_ins').delete().eq('id', pending.id);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      setPendingSignIns(pendingSignIns.filter(p => p.id !== pending.id));
-      toast({ title: "Success", description: "Sign-in rejected" });
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-600 mt-2">Manage intern attendance and approve sign-ins</p>
+          <p className="text-gray-600 mt-2">Manage intern attendance records</p>
         </div>
 
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Interns</CardTitle>
@@ -255,77 +209,13 @@ export const AdminDashboard: React.FC = () => {
               <p className="text-xs text-muted-foreground">Not signed in</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Sign-Ins</CardTitle>
-              <Users className="h-4 w-4 ml-auto text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{pendingSignIns.length}</div>
-              <p className="text-xs text-muted-foreground">Awaiting approval</p>
-            </CardContent>
-          </Card>
         </div>
 
-        <Tabs defaultValue="pending" className="space-y-6">
+        <Tabs defaultValue="attendance" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="pending">Pending Sign-Ins</TabsTrigger>
             <TabsTrigger value="attendance">Attendance Records</TabsTrigger>
             <TabsTrigger value="interns">Manage Interns</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="pending" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Pending Sign-Ins</CardTitle>
-                <CardDescription>Approve or reject intern sign-in requests</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {pendingSignIns.length > 0 ? (
-                    pendingSignIns.map((pending) => {
-                      const pendingUser = users.find(u => u.id === pending.user_id);
-                      return (
-                        <div key={pending.id} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div className="flex-1">
-                            <div className="font-medium">{pendingUser?.name || 'Unknown User'}</div>
-                            <div className="text-sm text-gray-600">
-                              ID: {pendingUser?.intern_id || 'Unknown'} • Requested: {formatDate(pending.sign_in_time)} at {formatTime(pending.sign_in_time)}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-green-600 border-green-600"
-                              onClick={() => handleApproveSignIn(pending)}
-                            >
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-red-600 border-red-600"
-                              onClick={() => handleRejectSignIn(pending)}
-                            >
-                              <XCircle className="h-4 w-4 mr-1" />
-                              Reject
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p>No pending sign-in requests</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           <TabsContent value="attendance" className="space-y-6">
             <Card>
@@ -458,10 +348,8 @@ export const AdminDashboard: React.FC = () => {
               <CardContent>
                 <div className="space-y-4">
                   {interns.map((intern) => {
-                    const internMissedDays = (missedDaysByUser[intern.id] || []).length;
                     const internRecords = records.filter(r => r.user_id === intern.id);
-                    const totalDays = internRecords.length + internMissedDays;
-                    const attendanceRate = totalDays > 0 ? Math.round(((totalDays - internMissedDays) / totalDays) * 100) : 0;
+                    const attendanceRate = internRecords.length > 0 ? Math.round((internRecords.filter(r => r.sign_in_time).length / internRecords.length) * 100) : 0;
 
                     return (
                       <div key={intern.id} className="flex items-center justify-between p-4 border rounded-lg">
@@ -475,12 +363,9 @@ export const AdminDashboard: React.FC = () => {
                           <div className="text-right">
                             <div className="text-sm font-medium">{attendanceRate}% attendance</div>
                             <div className="text-xs text-gray-500">
-                              {internMissedDays} missed day{internMissedDays !== 1 ? 's' : ''}
+                              {internRecords.length} total record{internRecords.length !== 1 ? 's' : ''}
                             </div>
                           </div>
-                          {internMissedDays >= 3 && (
-                            <Badge className="bg-red-100 text-red-800">High Absences</Badge>
-                          )}
                           <Dialog>
                             <DialogTrigger asChild>
                               <Button variant="ghost" size="sm" onClick={() => {
