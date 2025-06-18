@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, UserPlus, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,7 +17,8 @@ export const Signup: React.FC = () => {
     internId: '',
     phoneNumber: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    role: ''
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -34,9 +35,21 @@ export const Signup: React.FC = () => {
     if (error) setError('');
   };
 
+  const handleRoleChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      role: value
+    }));
+    if (error) setError('');
+  };
+
   const validateForm = () => {
-    if (!formData.name || !formData.email || !formData.internId || !formData.phoneNumber || !formData.password) {
-      return 'Please fill in all fields';
+    if (!formData.name || !formData.email || !formData.password || !formData.role) {
+      return 'Please fill in all required fields';
+    }
+
+    if (formData.role === 'intern' && !formData.internId) {
+      return 'Intern ID is required for intern accounts';
     }
     
     if (formData.password !== formData.confirmPassword) {
@@ -71,9 +84,10 @@ export const Signup: React.FC = () => {
       const result = await signup({
         name: formData.name.trim(),
         email: formData.email.trim(),
-        internId: formData.internId.trim(),
-        phoneNumber: formData.phoneNumber.trim(),
-        password: formData.password
+        internId: formData.role === 'intern' ? formData.internId.trim() : undefined,
+        phoneNumber: formData.phoneNumber.trim() || undefined,
+        password: formData.password,
+        role: formData.role as 'intern' | 'admin'
       });
       
       if (result.success) {
@@ -90,7 +104,8 @@ export const Signup: React.FC = () => {
           internId: '',
           phoneNumber: '',
           password: '',
-          confirmPassword: ''
+          confirmPassword: '',
+          role: ''
         });
       } else {
         setError(result.error || 'An unexpected error occurred');
@@ -145,7 +160,7 @@ export const Signup: React.FC = () => {
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Sign Up</CardTitle>
             <CardDescription className="text-center">
-              Enter your information to create your intern account
+              Enter your information to create your account
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -155,6 +170,19 @@ export const Signup: React.FC = () => {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="role">Account Type *</Label>
+                <Select value={formData.role} onValueChange={handleRoleChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select your role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="intern">Intern</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
@@ -183,28 +211,29 @@ export const Signup: React.FC = () => {
                 />
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="internId">Intern ID *</Label>
-                <Input
-                  id="internId"
-                  name="internId"
-                  value={formData.internId}
-                  onChange={handleChange}
-                  placeholder="Enter your unique intern ID"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
+              {formData.role === 'intern' && (
+                <div className="space-y-2">
+                  <Label htmlFor="internId">Intern ID *</Label>
+                  <Input
+                    id="internId"
+                    name="internId"
+                    value={formData.internId}
+                    onChange={handleChange}
+                    placeholder="Enter your unique intern ID"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+              )}
               
               <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Phone Number *</Label>
+                <Label htmlFor="phoneNumber">Phone Number</Label>
                 <Input
                   id="phoneNumber"
                   name="phoneNumber"
                   value={formData.phoneNumber}
                   onChange={handleChange}
-                  placeholder="Enter your phone number"
-                  required
+                  placeholder="Enter your phone number (optional)"
                   disabled={isLoading}
                 />
               </div>

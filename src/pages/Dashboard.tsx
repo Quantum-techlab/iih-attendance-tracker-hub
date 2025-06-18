@@ -5,19 +5,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, Calendar, AlertTriangle, CheckCircle, User, Phone, Mail, Loader2 } from 'lucide-react';
+import { Clock, Calendar, AlertTriangle, CheckCircle, User, Phone, Mail, Loader2, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [todayRecord, setTodayRecord] = useState(null);
-  const [userRecords, setUserRecords] = useState([]);
-  const [missedDays, setMissedDays] = useState([]);
+  const [pendingSignIns, setPendingSignIns] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const today = new Date();
   const isWeekday = today.getDay() >= 1 && today.getDay() <= 5;
+  const todayDate = today.toISOString().split('T')[0];
 
   useEffect(() => {
     if (!user) return;
@@ -27,57 +27,36 @@ export const Dashboard: React.FC = () => {
       console.log('Fetching data for user:', user.id);
 
       try {
-        // Get today's date in YYYY-MM-DD format
-        const todayDate = today.toISOString().split('T')[0];
-        
-        // Fetch today's attendance record
-        const { data: recordData, error: recordError } = await supabase
-          .from('attendance_records')
+        // Fetch pending sign-ins for today
+        const { data: pendingData, error: pendingError } = await supabase
+          .from('pending_sign_ins')
           .select('*')
           .eq('user_id', user.id)
-          .eq('date', todayDate)
-          .maybeSingle();
+          .eq('sign_in_time::date', todayDate);
         
-        if (recordError) {
-          console.error('Error fetching today record:', recordError);
-          toast({ title: "Error", description: recordError.message, variant: "destructive" });
+        if (pendingError) {
+          console.error('Error fetching pending sign-ins:', pendingError);
+          toast({ title: "Error", description: pendingError.message, variant: "destructive" });
         } else {
-          console.log('Today record:', recordData);
-          setTodayRecord(recordData);
+          console.log('Pending sign-ins:', pendingData);
+          setPendingSignIns(pendingData || []);
         }
 
-        // Fetch recent attendance records (last 10)
+        // Fetch approved attendance records (last 10)
         const { data: recordsData, error: recordsError } = await supabase
           .from('attendance_records')
           .select('*')
           .eq('user_id', user.id)
-          .order('date', { ascending: false })
+          .order('sign_in_time', { ascending: false })
           .limit(10);
         
         if (recordsError) {
           console.error('Error fetching records:', recordsError);
           toast({ title: "Error", description: recordsError.message, variant: "destructive" });
         } else {
-          console.log('User records:', recordsData);
-          setUserRecords(recordsData || []);
+          console.log('Attendance records:', recordsData);
+          setAttendanceRecords(recordsData || []);
         }
-
-        // Calculate missed days (last 30 weekdays without attendance)
-        const missedDaysData = [];
-        for (let i = 1; i <= 30; i++) {
-          const checkDate = new Date(today);
-          checkDate.setDate(today.getDate() - i);
-          
-          if (checkDate.getDay() >= 1 && checkDate.getDay() <= 5) { // Weekday
-            const checkDateStr = checkDate.toISOString().split('T')[0];
-            const hasRecord = recordsData?.find(r => r.date === checkDateStr && r.sign_in_time);
-            
-            if (!hasRecord) {
-              missedDaysData.push(checkDateStr);
-            }
-          }
-        }
-        setMissedDays(missedDaysData);
 
       } catch (error) {
         console.error('Error in fetchData:', error);
@@ -101,117 +80,125 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  const handleSignIn = async () => {
-    if (todayRecord) {
+  const handleSignInRequest = async () => {
+    const todayPending = pendingSignIns.find(p => 
+      new Date(p.sign_in_time).toDateString() === today.toDateString() && !p.sign_out_time
+    );
+
+    if (todayPending) {
       toast({
-        title: "Already signed in",
-        description: "You have already signed in today.",
+        title: "Sign-in request already submitted",
+        description: "You have already submitted a sign-in request for today.",
         variant: "destructive",
       });
       return;
     }
 
-    const todayDate = today.toISOString().split('T')[0];
-    const currentTime = today.toTimeString().split(' ')[0].substring(0, 5); // HH:MM format
+    const currentTime = new Date().toISOString();
 
-    console.log('Attempting sign in for date:', todayDate, 'time:', currentTime);
+    console.log('Submitting sign-in request for time:', currentTime);
 
-    const { data, error } = await supabase.from('attendance_records').insert({
+    const { data, error } = await supabase.from('pending_sign_ins').insert({
       user_id: user.id,
-      date: todayDate,
       sign_in_time: currentTime,
-      status: 'partial'
+      status: 'pending'
     }).select().single();
 
     if (error) {
-      console.error('Sign-in error:', error);
+      console.error('Sign-in request error:', error);
       toast({
-        title: "Sign-in failed",
+        title: "Sign-in request failed",
         description: error.message,
         variant: "destructive",
       });
     } else {
-      console.log('Sign-in successful:', data);
-      setTodayRecord(data);
+      console.log('Sign-in request successful:', data);
+      setPendingSignIns([...pendingSignIns, data]);
       toast({
-        title: "Signed in successfully!",
-        description: "Welcome to work today!",
+        title: "Sign-in request submitted!",
+        description: "Your sign-in request is pending admin approval.",
       });
     }
   };
 
-  const handleSignOut = async () => {
-    if (!todayRecord || !todayRecord.sign_in_time || todayRecord.sign_out_time) {
+  const handleSignOutRequest = async () => {
+    const todayPending = pendingSignIns.find(p => 
+      new Date(p.sign_in_time).toDateString() === today.toDateString() && 
+      p.sign_in_time && !p.sign_out_time
+    );
+
+    if (!todayPending) {
       toast({
-        title: "Sign-out failed",
-        description: "You must sign in first, or you've already signed out.",
+        title: "Sign-out request failed",
+        description: "You must submit a sign-in request first.",
         variant: "destructive",
       });
       return;
     }
 
-    const currentTime = today.toTimeString().split(' ')[0].substring(0, 5); // HH:MM format
+    const currentTime = new Date().toISOString();
 
-    console.log('Attempting sign out at time:', currentTime);
+    console.log('Submitting sign-out request for time:', currentTime);
 
     const { data, error } = await supabase
-      .from('attendance_records')
+      .from('pending_sign_ins')
       .update({ 
-        sign_out_time: currentTime,
-        status: 'present'
+        sign_out_time: currentTime
       })
-      .eq('id', todayRecord.id)
+      .eq('id', todayPending.id)
       .select()
       .single();
 
     if (error) {
-      console.error('Sign-out error:', error);
+      console.error('Sign-out request error:', error);
       toast({
-        title: "Sign-out failed",
+        title: "Sign-out request failed",
         description: error.message,
         variant: "destructive",
       });
     } else {
-      console.log('Sign-out successful:', data);
-      setTodayRecord(data);
+      console.log('Sign-out request successful:', data);
+      setPendingSignIns(pendingSignIns.map(p => p.id === data.id ? data : p));
       toast({
-        title: "Signed out successfully!",
-        description: "Have a great rest of your day!",
+        title: "Sign-out request submitted!",
+        description: "Your sign-out request is pending admin approval.",
       });
     }
   };
 
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'N/A';
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
-      weekday: 'long',
+  const formatDateTime = (dateTimeStr) => {
+    if (!dateTimeStr) return 'N/A';
+    return new Date(dateTimeStr).toLocaleString('en-US', {
+      weekday: 'short',
       year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
-  const formatTime = (timeStr) => {
-    if (!timeStr) return 'N/A';
-    return timeStr;
-  };
-
-  const getStatusBadge = (record) => {
-    if (record.sign_in_time && record.sign_out_time) {
-      return <Badge className="bg-green-100 text-green-800">Present</Badge>;
-    } else if (record.sign_in_time) {
-      return <Badge className="bg-yellow-100 text-yellow-800">Partial</Badge>;
-    } else {
-      return <Badge className="bg-red-100 text-red-800">Absent</Badge>;
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'approved':
+        return <Badge className="bg-green-100 text-green-800">Approved</Badge>;
+      case 'rejected':
+        return <Badge className="bg-red-100 text-red-800">Rejected</Badge>;
+      default:
+        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
     }
   };
+
+  const todayPending = pendingSignIns.find(p => 
+    new Date(p.sign_in_time).toDateString() === today.toDateString()
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Welcome back, {user.name}!</h1>
-          <p className="text-gray-600 mt-2">Track your attendance and manage your internship progress</p>
+          <p className="text-gray-600 mt-2">Submit attendance requests and track your progress</p>
         </div>
 
         {loading ? (
@@ -255,25 +242,25 @@ export const Dashboard: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {todayRecord ? (
+                    {todayPending ? (
                       <>
-                        {todayRecord.sign_in_time && (
+                        {todayPending.sign_in_time && (
                           <div className="flex items-center space-x-2">
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span className="text-sm">Signed in at {formatTime(todayRecord.sign_in_time)}</span>
+                            <Send className="h-4 w-4 text-blue-500" />
+                            <span className="text-sm">Sign-in requested</span>
                           </div>
                         )}
-                        {todayRecord.sign_out_time && (
+                        {todayPending.sign_out_time && (
                           <div className="flex items-center space-x-2">
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span className="text-sm">Signed out at {formatTime(todayRecord.sign_out_time)}</span>
+                            <Send className="h-4 w-4 text-blue-500" />
+                            <span className="text-sm">Sign-out requested</span>
                           </div>
                         )}
-                        {getStatusBadge(todayRecord)}
+                        {getStatusBadge(todayPending.status)}
                       </>
                     ) : (
                       <div className="text-sm text-gray-500">
-                        {isWeekday ? 'Not signed in today' : 'Weekend - No attendance required'}
+                        {isWeekday ? 'No requests submitted today' : 'Weekend - No attendance required'}
                       </div>
                     )}
                   </div>
@@ -282,13 +269,13 @@ export const Dashboard: React.FC = () => {
 
               <Card>
                 <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Missed Days</CardTitle>
-                  <AlertTriangle className="h-4 w-4 ml-auto text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">Approved Records</CardTitle>
+                  <CheckCircle className="h-4 w-4 ml-auto text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-red-600">{missedDays.length}</div>
+                  <div className="text-2xl font-bold text-green-600">{attendanceRecords.length}</div>
                   <p className="text-xs text-muted-foreground">
-                    {missedDays.length === 0 ? 'Perfect attendance!' : 'Days missed this period'}
+                    Total approved attendance records
                   </p>
                 </CardContent>
               </Card>
@@ -297,77 +284,74 @@ export const Dashboard: React.FC = () => {
             {isWeekday && (
               <Card className="mb-8">
                 <CardHeader>
-                  <CardTitle>Today's Attendance</CardTitle>
+                  <CardTitle>Today's Attendance Requests</CardTitle>
                   <CardDescription>
-                    Sign in when you arrive and sign out when you leave
+                    Submit sign-in and sign-out requests for admin approval
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex space-x-4">
                     <Button
-                      onClick={handleSignIn}
-                      disabled={!!todayRecord}
+                      onClick={handleSignInRequest}
+                      disabled={!!todayPending}
                       className="flex-1"
                     >
-                      {todayRecord ? 'Signed In' : 'Sign In'}
+                      {todayPending ? 'Sign-In Requested' : 'Request Sign-In'}
                     </Button>
                     <Button
-                      onClick={handleSignOut}
+                      onClick={handleSignOutRequest}
                       variant="outline"
-                      disabled={!todayRecord || !!todayRecord?.sign_out_time}
+                      disabled={!todayPending || !!todayPending?.sign_out_time}
                       className="flex-1"
                     >
-                      {todayRecord?.sign_out_time ? 'Signed Out' : 'Sign Out'}
+                      {todayPending?.sign_out_time ? 'Sign-Out Requested' : 'Request Sign-Out'}
                     </Button>
                   </div>
+                  {todayPending && (
+                    <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">Today's Request Status</p>
+                          <p className="text-xs text-gray-600">
+                            Submitted: {formatDateTime(todayPending.sign_in_time)}
+                            {todayPending.sign_out_time && ` - ${formatDateTime(todayPending.sign_out_time)}`}
+                          </p>
+                        </div>
+                        {getStatusBadge(todayPending.status)}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
 
-            {missedDays.length > 0 && (
-              <Alert className="mb-8 border-red-200 bg-red-50">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  You have {missedDays.length} missed day{missedDays.length > 1 ? 's' : ''}.{' '}
-                  {missedDays.length >= 3 && 'Please ensure regular attendance to maintain good standing.'}
-                  <div className="mt-2 text-sm">
-                    Missed dates: {missedDays.slice(0, 5).map(date => formatDate(date)).join(', ')}
-                    {missedDays.length > 5 && ` and ${missedDays.length - 5} more...`}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
-
             <Card>
               <CardHeader>
-                <CardTitle>Recent Attendance History</CardTitle>
-                <CardDescription>Your last 10 attendance records</CardDescription>
+                <CardTitle>Approved Attendance History</CardTitle>
+                <CardDescription>Your approved attendance records</CardDescription>
               </CardHeader>
               <CardContent>
-                {userRecords.length > 0 ? (
+                {attendanceRecords.length > 0 ? (
                   <div className="space-y-4">
-                    {userRecords.map((record) => (
+                    {attendanceRecords.map((record) => (
                       <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
                         <div>
-                          <div className="font-medium">{formatDate(record.date)}</div>
+                          <div className="font-medium">{formatDateTime(record.sign_in_time)}</div>
                           <div className="text-sm text-gray-600">
-                            {record.sign_in_time && `In: ${formatTime(record.sign_in_time)}`}
+                            {record.sign_in_time && `In: ${formatDateTime(record.sign_in_time)}`}
                             {record.sign_in_time && record.sign_out_time && ' • '}
-                            {record.sign_out_time && `Out: ${formatTime(record.sign_out_time)}`}
-                            {!record.sign_in_time && 'No sign-in recorded'}
+                            {record.sign_out_time && `Out: ${formatDateTime(record.sign_out_time)}`}
                           </div>
                         </div>
-                        <div>
-                          {getStatusBadge(record)}
-                        </div>
+                        <Badge className="bg-green-100 text-green-800">Approved</Badge>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-500">
                     <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p>No attendance records yet</p>
-                    <p className="text-sm">Start by signing in today!</p>
+                    <p>No approved attendance records yet</p>
+                    <p className="text-sm">Submit your first attendance request!</p>
                   </div>
                 )}
               </CardContent>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Users, Calendar, AlertTriangle, Download, Search, Edit } from 'lucide-react';
+import { Users, Calendar, AlertTriangle, Download, Search, Edit, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export const AdminDashboard: React.FC = () => {
@@ -19,20 +18,42 @@ export const AdminDashboard: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [users, setUsers] = useState([]);
-  const [records, setRecords] = useState([]);
+  const [pendingSignIns, setPendingSignIns] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [editIntern, setEditIntern] = useState(null);
-  const [editRecord, setEditRecord] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', intern_id: '', sign_in_time: '', sign_out_time: '' });
+  const [editForm, setEditForm] = useState({ name: '', intern_id: '' });
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: usersData, error: usersError } = await supabase.from('profiles').select('*').eq('role', 'intern');
+      // Fetch all users
+      const { data: usersData, error: usersError } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
       if (usersError) toast({ title: "Error", description: usersError.message, variant: "destructive" });
       setUsers(usersData || []);
 
-      const { data: recordsData, error: recordsError } = await supabase.from('attendance_records').select('*');
+      // Fetch pending sign-ins
+      const { data: pendingData, error: pendingError } = await supabase
+        .from('pending_sign_ins')
+        .select(`
+          *,
+          profiles (name, intern_id, email)
+        `)
+        .order('created_at', { ascending: false });
+      if (pendingError) toast({ title: "Error", description: pendingError.message, variant: "destructive" });
+      setPendingSignIns(pendingData || []);
+
+      // Fetch attendance records
+      const { data: recordsData, error: recordsError } = await supabase
+        .from('attendance_records')
+        .select(`
+          *,
+          profiles (name, intern_id, email)
+        `)
+        .order('sign_in_time', { ascending: false });
       if (recordsError) toast({ title: "Error", description: recordsError.message, variant: "destructive" });
-      setRecords(recordsData || []);
+      setAttendanceRecords(recordsData || []);
     };
     fetchData();
   }, []);
@@ -53,90 +74,87 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  const interns = users;
-  const totalInterns = interns.length;
-  const today = new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' });
-  const todayRecords = records.filter(r => r.sign_in_time && new Date(r.sign_in_time).toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) === today);
-  const presentToday = todayRecords.length;
-  const absentToday = totalInterns - presentToday;
+  const interns = users.filter(u => u.role === 'intern');
+  const admins = users.filter(u => u.role === 'admin');
+  const totalUsers = users.length;
+  const pendingRequests = pendingSignIns.filter(p => p.status === 'pending').length;
+  const approvedToday = attendanceRecords.filter(r => 
+    new Date(r.sign_in_time).toDateString() === new Date().toDateString()
+  ).length;
 
-  const getStatus = (record) => {
-    if (record.sign_in_time && record.sign_out_time) return 'present';
-    if (record.sign_in_time) return 'partial';
-    return 'absent';
-  };
+  const handleApproveRequest = async (request) => {
+    try {
+      // Update pending request status
+      const { error: updateError } = await supabase
+        .from('pending_sign_ins')
+        .update({ status: 'approved' })
+        .eq('id', request.id);
 
-  const getStatusBadge = (record) => {
-    const status = getStatus(record);
-    switch (status) {
-      case 'present':
-        return <Badge className="bg-green-100 text-green-800">Present</Badge>;
-      case 'partial':
-        return <Badge className="bg-yellow-100 text-yellow-800">Partial</Badge>;
-      default:
-        return <Badge className="bg-red-100 text-red-800">Absent</Badge>;
+      if (updateError) throw updateError;
+
+      // Create attendance record
+      const { error: insertError } = await supabase
+        .from('attendance_records')
+        .insert({
+          user_id: request.user_id,
+          sign_in_time: request.sign_in_time,
+          sign_out_time: request.sign_out_time
+        });
+
+      if (insertError) throw insertError;
+
+      // Update local state
+      setPendingSignIns(pendingSignIns.map(p => 
+        p.id === request.id ? { ...p, status: 'approved' } : p
+      ));
+
+      // Refresh attendance records
+      const { data: recordsData } = await supabase
+        .from('attendance_records')
+        .select(`
+          *,
+          profiles (name, intern_id, email)
+        `)
+        .order('sign_in_time', { ascending: false });
+      setAttendanceRecords(recordsData || []);
+
+      toast({
+        title: "Request approved",
+        description: "Attendance request has been approved and recorded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return 'N/A';
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      timeZone: 'Africa/Lagos',
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const handleRejectRequest = async (request) => {
+    try {
+      const { error } = await supabase
+        .from('pending_sign_ins')
+        .update({ status: 'rejected' })
+        .eq('id', request.id);
 
-  const formatTime = (timestamp) => {
-    if (!timestamp) return 'N/A';
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      timeZone: 'Africa/Lagos',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+      if (error) throw error;
 
-  const filteredRecords = records.filter(record => {
-    const recordUser = users.find(u => u.id === record.user_id);
-    const matchesSearch = !searchTerm || 
-      (recordUser && (recordUser.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                recordUser.intern_id.toLowerCase().includes(searchTerm.toLowerCase())));
-    const matchesStatus = statusFilter === 'all' || getStatus(record) === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+      setPendingSignIns(pendingSignIns.map(p => 
+        p.id === request.id ? { ...p, status: 'rejected' } : p
+      ));
 
-  const exportData = async () => {
-    const csvData = filteredRecords.map(record => {
-      const recordUser = users.find(u => u.id === record.user_id);
-      return {
-        Name: recordUser?.name || 'Unknown',
-        InternID: recordUser?.intern_id || 'Unknown',
-        Date: formatDate(record.sign_in_time),
-        SignInTime: formatTime(record.sign_in_time),
-        SignOutTime: formatTime(record.sign_out_time),
-        Status: getStatus(record),
-      };
-    });
-
-    const csv = [
-      Object.keys(csvData[0] || {}).join(','),
-      ...csvData.map(row => Object.values(row).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendance-report-${today}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-
-    toast({
-      title: "Export successful",
-      description: "Attendance report has been downloaded.",
-    });
+      toast({
+        title: "Request rejected",
+        description: "Attendance request has been rejected.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEditIntern = async () => {
@@ -150,24 +168,58 @@ export const AdminDashboard: React.FC = () => {
     } else {
       setUsers(users.map(u => u.id === editIntern.id ? { ...u, name: editForm.name, intern_id: editForm.intern_id } : u));
       setEditIntern(null);
-      toast({ title: "Success", description: "Intern updated successfully" });
+      toast({ title: "Success", description: "User updated successfully" });
     }
   };
 
-  const handleEditRecord = async () => {
-    if (!editRecord) return;
-    const updates = {
-      sign_in_time: editForm.sign_in_time || null,
-      sign_out_time: editForm.sign_out_time || null,
-    };
-    const { error } = await supabase.from('attendance_records').update(updates).eq('id', editRecord.id);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      setRecords(records.map(r => r.id === editRecord.id ? { ...r, ...updates } : r));
-      setEditRecord(null);
-      toast({ title: "Success", description: "Attendance updated successfully" });
+  const formatDateTime = (dateTimeStr) => {
+    if (!dateTimeStr) return 'N/A';
+    return new Date(dateTimeStr).toLocaleString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'approved':
+        return <Badge className="bg-green-100 text-green-800">Approved</Badge>;
+      case 'rejected':
+        return <Badge className="bg-red-100 text-red-800">Rejected</Badge>;
+      default:
+        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
     }
+  };
+
+  const exportData = async () => {
+    const csvData = attendanceRecords.map(record => ({
+      Name: record.profiles?.name || 'Unknown',
+      InternID: record.profiles?.intern_id || 'Unknown',
+      SignInTime: formatDateTime(record.sign_in_time),
+      SignOutTime: formatDateTime(record.sign_out_time),
+    }));
+
+    const csv = [
+      Object.keys(csvData[0] || {}).join(','),
+      ...csvData.map(row => Object.values(row).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export successful",
+      description: "Attendance report has been downloaded.",
+    });
   };
 
   return (
@@ -175,55 +227,118 @@ export const AdminDashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-600 mt-2">Manage intern attendance records</p>
+          <p className="text-gray-600 mt-2">Manage attendance requests and user accounts</p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Interns</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Users</CardTitle>
               <Users className="h-4 w-4 ml-auto text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalInterns}</div>
-              <p className="text-xs text-muted-foreground">Active intern accounts</p>
+              <div className="text-2xl font-bold">{totalUsers}</div>
+              <p className="text-xs text-muted-foreground">{interns.length} interns, {admins.length} admins</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Present Today</CardTitle>
+              <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+              <Clock className="h-4 w-4 ml-auto text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{pendingRequests}</div>
+              <p className="text-xs text-muted-foreground">Awaiting approval</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Approved Today</CardTitle>
               <Calendar className="h-4 w-4 ml-auto text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{presentToday}</div>
-              <p className="text-xs text-muted-foreground">Signed in today</p>
+              <div className="text-2xl font-bold text-green-600">{approvedToday}</div>
+              <p className="text-xs text-muted-foreground">Attendance records</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Absent Today</CardTitle>
-              <AlertTriangle className="h-4 w-4 ml-auto text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Total Records</CardTitle>
+              <CheckCircle className="h-4 w-4 ml-auto text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{absentToday}</div>
-              <p className="text-xs text-muted-foreground">Not signed in</p>
+              <div className="text-2xl font-bold">{attendanceRecords.length}</div>
+              <p className="text-xs text-muted-foreground">All time approved</p>
             </CardContent>
           </Card>
         </div>
 
-        <Tabs defaultValue="attendance" className="space-y-6">
+        <Tabs defaultValue="pending" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="attendance">Attendance Records</TabsTrigger>
-            <TabsTrigger value="interns">Manage Interns</TabsTrigger>
+            <TabsTrigger value="pending">Pending Requests</TabsTrigger>
+            <TabsTrigger value="records">Attendance Records</TabsTrigger>
+            <TabsTrigger value="users">Manage Users</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="attendance" className="space-y-6">
+          <TabsContent value="pending" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Pending Attendance Requests</CardTitle>
+                <CardDescription>Review and approve or reject attendance requests from interns</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {pendingSignIns.filter(p => p.status === 'pending').length > 0 ? (
+                    pendingSignIns.filter(p => p.status === 'pending').map((request) => (
+                      <div key={request.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium">{request.profiles?.name || 'Unknown User'}</div>
+                          <div className="text-sm text-gray-600">
+                            ID: {request.profiles?.intern_id || 'Unknown'} • 
+                            Sign-in: {formatDateTime(request.sign_in_time)}
+                            {request.sign_out_time && ` • Sign-out: ${formatDateTime(request.sign_out_time)}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {getStatusBadge(request.status)}
+                          <Button
+                            size="sm"
+                            onClick={() => handleApproveRequest(request)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleRejectRequest(request)}
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Clock className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No pending requests</p>
+                      <p className="text-sm">All requests have been processed</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="records" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <div>
-                    <CardTitle>Attendance Records</CardTitle>
-                    <CardDescription>View and filter all intern attendance records</CardDescription>
+                    <CardTitle>Approved Attendance Records</CardTitle>
+                    <CardDescription>All approved attendance records</CardDescription>
                   </div>
                   <Button onClick={exportData} className="flex items-center space-x-2">
                     <Download className="h-4 w-4" />
@@ -232,106 +347,25 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                  <div className="flex-1">
-                    <Label htmlFor="search">Search by name or intern ID</Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="search"
-                        placeholder="Search interns..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="status-filter">Filter by status</Label>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-40">
-                        <SelectValue placeholder="All statuses" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
-                        <SelectItem value="present">Present</SelectItem>
-                        <SelectItem value="partial">Partial</SelectItem>
-                        <SelectItem value="absent">Absent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
                 <div className="space-y-4">
-                  {filteredRecords.length > 0 ? (
-                    filteredRecords.map((record) => {
-                      const recordUser = users.find(u => u.id === record.user_id);
-                      return (
-                        <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div className="flex-1">
-                            <div className="font-medium">{recordUser?.name || 'Unknown User'}</div>
-                            <div className="text-sm text-gray-600">
-                              ID: {recordUser?.intern_id || 'Unknown'} • {formatDate(record.sign_in_time)}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-4">
-                            <div className="text-sm text-gray-600">
-                              {record.sign_in_time && `In: ${formatTime(record.sign_in_time)}`}
-                              {record.sign_in_time && record.sign_out_time && ' • '}
-                              {record.sign_out_time && `Out: ${formatTime(record.sign_out_time)}`}
-                              {!record.sign_in_time && 'No sign-in'}
-                            </div>
-                            {getStatusBadge(record)}
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => {
-                                  setEditRecord(record);
-                                  setEditForm({
-                                    sign_in_time: record.sign_in_time ? new Date(record.sign_in_time).toISOString().slice(0, 16) : '',
-                                    sign_out_time: record.sign_out_time ? new Date(record.sign_out_time).toISOString().slice(0, 16) : '',
-                                    name: '',
-                                    intern_id: '',
-                                  });
-                                }}>
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Edit Attendance Record</DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <div>
-                                    <Label htmlFor="sign_in_time">Sign-In Time</Label>
-                                    <Input
-                                      id="sign_in_time"
-                                      type="datetime-local"
-                                      value={editForm.sign_in_time}
-                                      onChange={(e) => setEditForm({ ...editForm, sign_in_time: e.target.value })}
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label htmlFor="sign_out_time">Sign-Out Time</Label>
-                                    <Input
-                                      id="sign_out_time"
-                                      type="datetime-local"
-                                      value={editForm.sign_out_time}
-                                      onChange={(e) => setEditForm({ ...editForm, sign_out_time: e.target.value })}
-                                    />
-                                  </div>
-                                  <Button onClick={handleEditRecord}>Save</Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
+                  {attendanceRecords.length > 0 ? (
+                    attendanceRecords.map((record) => (
+                      <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium">{record.profiles?.name || 'Unknown User'}</div>
+                          <div className="text-sm text-gray-600">
+                            ID: {record.profiles?.intern_id || 'Unknown'} • 
+                            In: {formatDateTime(record.sign_in_time)}
+                            {record.sign_out_time && ` • Out: ${formatDateTime(record.sign_out_time)}`}
                           </div>
                         </div>
-                      );
-                    })
+                        <Badge className="bg-green-100 text-green-800">Approved</Badge>
+                      </div>
+                    ))
                   ) : (
                     <div className="text-center py-8 text-gray-500">
                       <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                       <p>No attendance records found</p>
-                      <p className="text-sm">Try adjusting your search or filters</p>
                     </div>
                   )}
                 </div>
@@ -339,42 +373,35 @@ export const AdminDashboard: React.FC = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="interns" className="space-y-6">
+          <TabsContent value="users" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Intern Management</CardTitle>
-                <CardDescription>View and manage intern accounts</CardDescription>
+                <CardTitle>User Management</CardTitle>
+                <CardDescription>View and manage user accounts</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {interns.map((intern) => {
-                    const internRecords = records.filter(r => r.user_id === intern.id);
-                    const attendanceRate = internRecords.length > 0 ? Math.round((internRecords.filter(r => r.sign_in_time).length / internRecords.length) * 100) : 0;
-
-                    return (
-                      <div key={intern.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex-1">
-                          <div className="font-medium">{intern.name}</div>
-                          <div className="text-sm text-gray-600">
-                            {intern.email} • ID: {intern.intern_id}
-                          </div>
+                  {users.map((userItem) => (
+                    <div key={userItem.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-medium">{userItem.name}</div>
+                        <div className="text-sm text-gray-600">
+                          {userItem.email} • Role: {userItem.role}
+                          {userItem.intern_id && ` • ID: ${userItem.intern_id}`}
                         </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="text-right">
-                            <div className="text-sm font-medium">{attendanceRate}% attendance</div>
-                            <div className="text-xs text-gray-500">
-                              {internRecords.length} total record{internRecords.length !== 1 ? 's' : ''}
-                            </div>
-                          </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge variant={userItem.role === 'admin' ? 'default' : 'secondary'}>
+                          {userItem.role}
+                        </Badge>
+                        {userItem.role === 'intern' && (
                           <Dialog>
                             <DialogTrigger asChild>
                               <Button variant="ghost" size="sm" onClick={() => {
-                                setEditIntern(intern);
+                                setEditIntern(userItem);
                                 setEditForm({
-                                  name: intern.name,
-                                  intern_id: intern.intern_id,
-                                  sign_in_time: '',
-                                  sign_out_time: '',
+                                  name: userItem.name,
+                                  intern_id: userItem.intern_id || '',
                                 });
                               }}>
                                 <Edit className="h-4 w-4" />
@@ -405,10 +432,10 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </DialogContent>
                           </Dialog>
-                        </div>
+                        )}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>

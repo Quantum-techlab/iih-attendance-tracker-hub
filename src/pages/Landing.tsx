@@ -8,28 +8,28 @@ export const Landing: React.FC = () => {
   const features = [
     {
       icon: Clock,
-      title: 'Easy Sign In/Out',
-      description: 'Simple one-click attendance tracking for all weekdays. Sign in when you arrive, sign out when you leave.'
+      title: 'Approval-Based Attendance',
+      description: 'Interns submit sign-in/out requests that require admin approval for accurate tracking.'
     },
     {
       icon: Calendar,
-      title: 'Missed Days Tracking',
-      description: 'Automatically track and display missed attendance days with clear visibility for interns and admins.'
+      title: 'Weekday Tracking',
+      description: 'Automatically filters to weekdays only (Monday-Friday) with smart date validation.'
     },
     {
       icon: LayoutDashboard,
-      title: 'Personal Dashboard',
-      description: 'View your attendance history, missed days, and track your progress with an intuitive dashboard.'
+      title: 'Role-Based Dashboards',
+      description: 'Separate dashboards for interns and admins with appropriate access levels and features.'
     },
     {
       icon: Shield,
       title: 'Admin Oversight',
-      description: 'Comprehensive admin panel for managing all intern attendance records and generating reports.'
+      description: 'Comprehensive admin panel for approving attendance, managing users, and generating reports.'
     },
     {
       icon: User,
-      title: 'Profile Management',
-      description: 'Manage your profile information and keep your attendance records organized and up-to-date.'
+      title: 'Secure Registration',
+      description: 'Role-based signup for both interns and admins with proper authentication and authorization.'
     },
     {
       icon: Smartphone,
@@ -45,24 +45,21 @@ export const Landing: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center">
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
-              Track Your Attendance at
+              Professional Attendance System
               <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-emerald-500">
                 Ilorin Innovation Hub
               </span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-              A modern, efficient system designed to streamline intern attendance tracking. 
-              Sign in and out with ease, track your progress, and stay connected with your internship journey.
+              A comprehensive attendance management system with approval workflows, role-based access, 
+              and real-time tracking designed for modern internship programs.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" asChild className="text-lg px-8 py-3">
-                <Link to="/intern-login">Login as Intern</Link>
+                <Link to="/login">Log In</Link>
               </Button>
               <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3">
-                <Link to="/admin-login">Login as Admin</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild className="text-lg px-8 py-3">
-                <Link to="/signup">Register as Intern</Link>
+                <Link to="/signup">Sign Up</Link>
               </Button>
             </div>
           </div>
@@ -76,51 +73,81 @@ export const Landing: React.FC = () => {
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">About the System</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">How It Works</h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-              Built specifically for the Ilorin Innovation Hub, this attendance system ensures 
-              seamless tracking of intern presence while providing valuable insights for both 
-              interns and administrators.
+              Our approval-based system ensures accurate attendance tracking while maintaining 
+              professional oversight and accountability.
             </p>
           </div>
           
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <h3 className="text-2xl font-semibold text-gray-900 mb-4">
-                Empowering Innovation Through Accountability
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6">
+                For Interns
               </h3>
-              <p className="text-gray-600 mb-6">
-                The Ilorin Innovation Hub is committed to fostering the next generation of 
-                innovators and entrepreneurs. Our attendance system supports this mission by 
-                providing a reliable, user-friendly platform that encourages consistent 
-                participation and professional development.
-              </p>
-              <ul className="space-y-3 text-gray-600">
-                <li className="flex items-center">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
-                  Mandatory weekday attendance (Monday to Friday)
-                </li>
-                <li className="flex items-center">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full mr-3"></div>
-                  Real-time tracking and reporting
-                </li>
-                <li className="flex items-center">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
-                  Comprehensive admin oversight tools
-                </li>
-              </ul>
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-blue-600 font-semibold text-sm">1</span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Submit Sign-In Request</h4>
+                    <p className="text-gray-600 text-sm">Submit your arrival time when you get to the office</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-blue-600 font-semibold text-sm">2</span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Submit Sign-Out Request</h4>
+                    <p className="text-gray-600 text-sm">Submit your departure time when leaving</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-green-600 font-semibold text-sm">3</span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Track Your Progress</h4>
+                    <p className="text-gray-600 text-sm">View your attendance history and approval status</p>
+                  </div>
+                </div>
+              </div>
             </div>
             
-            <div className="bg-gradient-to-br from-blue-50 to-emerald-50 p-8 rounded-2xl">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-white font-bold text-2xl">IIH</span>
+            <div>
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6">
+                For Admins
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-emerald-600 font-semibold text-sm">1</span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Review Requests</h4>
+                    <p className="text-gray-600 text-sm">View all pending sign-in/out requests from interns</p>
+                  </div>
                 </div>
-                <h4 className="text-xl font-semibold text-gray-900 mb-2">Ilorin Innovation Hub</h4>
-                <p className="text-gray-600">
-                  Leading the way in technology education and innovation in Kwara State, 
-                  providing world-class internship programs that shape the future of tech.
-                </p>
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-emerald-600 font-semibold text-sm">2</span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Approve or Reject</h4>
+                    <p className="text-gray-600 text-sm">Make decisions on attendance requests with notes</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-emerald-600 font-semibold text-sm">3</span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Generate Reports</h4>
+                    <p className="text-gray-600 text-sm">Access comprehensive attendance reports and analytics</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -133,8 +160,8 @@ export const Landing: React.FC = () => {
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">Key Features</h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-              Everything you need for efficient attendance management, designed with 
-              both interns and administrators in mind.
+              Everything you need for professional attendance management with approval workflows 
+              and comprehensive oversight.
             </p>
           </div>
           
@@ -159,17 +186,14 @@ export const Landing: React.FC = () => {
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Ready to Get Started?</h2>
           <p className="text-xl text-blue-100 mb-8">
-            Join the Ilorin Innovation Hub community and start tracking your attendance today.
+            Join the Ilorin Innovation Hub community and start managing attendance professionally.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" asChild className="text-lg px-8 py-3">
-              <Link to="/signup">Create Intern Account</Link>
+              <Link to="/signup">Create Account</Link>
             </Button>
             <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3 border-white text-white hover:bg-white hover:text-blue-600">
-              <Link to="/intern-login">Login as Intern</Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild className="text-lg px-8 py-3 border-white text-white hover:bg-white hover:text-blue-600">
-              <Link to="/admin-login">Login as Admin</Link>
+              <Link to="/login">Sign In</Link>
             </Button>
           </div>
         </div>

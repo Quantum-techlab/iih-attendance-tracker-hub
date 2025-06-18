@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -8,7 +7,7 @@ interface UserProfile {
   name: string;
   email: string;
   intern_id: string | null;
-  role: 'intern' | 'admin' | 'hr';
+  role: 'intern' | 'admin';
   phone_number: string | null;
 }
 
@@ -16,7 +15,7 @@ interface AuthContextType {
   user: UserProfile | null;
   session: Session | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (userData: { name: string; email: string; internId?: string; phoneNumber?: string; password: string }) => Promise<{ success: boolean; error?: string }>;
+  signup: (userData: { name: string; email: string; internId?: string; phoneNumber?: string; password: string; role: 'intern' | 'admin' }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   isLoading: boolean;
 }
@@ -29,21 +28,6 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
-
-// Create a security definer function to get user role without recursion
-const getCurrentUserRole = async (): Promise<string | null> => {
-  try {
-    const { data, error } = await supabase.rpc('get_current_user_role');
-    if (error) {
-      console.error('Error getting user role:', error);
-      return null;
-    }
-    return data;
-  } catch (error) {
-    console.error('Role fetch error:', error);
-    return null;
-  }
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -69,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: data.name,
         email: data.email,
         intern_id: data.intern_id,
-        role: data.role as 'intern' | 'admin' | 'hr',
+        role: data.role as 'intern' | 'admin',
         phone_number: data.phone_number
       };
     } catch (error) {
@@ -172,7 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signup = async (userData: { name: string; email: string; internId?: string; phoneNumber?: string; password: string }) => {
+  const signup = async (userData: { name: string; email: string; internId?: string; phoneNumber?: string; password: string; role: 'intern' | 'admin' }) => {
     try {
       setIsLoading(true);
       
@@ -185,8 +169,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           emailRedirectTo: redirectUrl,
           data: {
             name: userData.name,
-            intern_id: userData.internId,
-            phone_number: userData.phoneNumber
+            intern_id: userData.internId || null,
+            phone_number: userData.phoneNumber || null,
+            role: userData.role
           }
         }
       });
